@@ -1,6 +1,10 @@
 # Local data volumes (do not commit)
-data/mysql/
-data/redis/
+data/mysql/*
+data/redis/*
+data/minio/*
+!data/mysql/.gitkeep
+!data/redis/.gitkeep
+!data/minio/.gitkeep
 
 # Environment variables
 .env
