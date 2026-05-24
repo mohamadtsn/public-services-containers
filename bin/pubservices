@@ -65,9 +65,12 @@ _row() {
 container_status() {
     local name="$1"
     local status
-    status=$(docker inspect --format='{{.State.Status}}' "$name" 2>/dev/null || echo "not found")
+    status=$(docker inspect --format='{{.State.Status}}' "$name" 2>/dev/null) || status=""
+    status="${status//[$'\t\r\n ']/}"
+    [[ -z "$status" ]] && status="not found"
     local health
-    health=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$name" 2>/dev/null || echo "")
+    health=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$name" 2>/dev/null) || health=""
+    health="${health//[$'\t\r\n ']/}"
 
     if [[ "$status" == "running" ]]; then
         if [[ "$health" == "healthy" ]]; then
