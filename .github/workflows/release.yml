@@ -40,6 +40,9 @@ jobs:
             --exclude='data/redis' \
             --exclude='data/minio' \
             --exclude='*.log' \
+            --exclude='scripts/release.sh' \
+            --exclude='.shellcheckrc' \
+            --exclude='.gitignore' \
             .
 
           mv "/tmp/$ARCHIVE_NAME" .
