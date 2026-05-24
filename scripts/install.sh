@@ -119,7 +119,7 @@ if [[ "$IS_UPDATE" == "true" ]]; then
         echo -e "  Installed : ${COLOR_GREEN}${CURRENT_DISPLAY}${COLOR_RESET}"
         echo -e "  Available : ${COLOR_YELLOW}${NEW_DISPLAY}${COLOR_RESET} (same version)"
         echo ""
-        read -r -p "  Same version is already installed. Continue anyway? [y/N]: " _confirm
+        read -r -p "  Same version is already installed. Continue anyway? [y/N]: " _confirm </dev/tty
         _confirm="${_confirm:-n}"
         if [[ ! "$_confirm" =~ ^[Yy]$ ]]; then
             echo -e "\n  ${COLOR_YELLOW}Update cancelled.${COLOR_RESET}\n"
@@ -129,7 +129,7 @@ if [[ "$IS_UPDATE" == "true" ]]; then
         echo -e "  Installed : ${COLOR_GREEN}${CURRENT_DISPLAY}${COLOR_RESET}"
         echo -e "  Available : ${COLOR_CYAN}${NEW_DISPLAY}${COLOR_RESET}"
         echo ""
-        read -r -p "  Update from ${CURRENT_DISPLAY} → ${NEW_DISPLAY}? [Y/n]: " _confirm
+        read -r -p "  Update from ${CURRENT_DISPLAY} → ${NEW_DISPLAY}? [Y/n]: " _confirm </dev/tty
         _confirm="${_confirm:-y}"
         if [[ ! "$_confirm" =~ ^[Yy]$ ]]; then
             echo -e "\n  ${COLOR_YELLOW}Update cancelled.${COLOR_RESET}\n"
