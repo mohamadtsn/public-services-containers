@@ -83,7 +83,9 @@ container_status() {
             echo -e "${GREEN}● running${RESET}"
         fi
     elif [[ "$status" == "not found" ]]; then
-        echo -e "${DIM}○ stopped${RESET}"
+        echo -e "${DIM}○ not found${RESET}"
+    elif [[ "$status" == "exited" || "$status" == "created" ]]; then
+        echo -e "${YELLOW}○ stopped${RESET}"
     else
         echo -e "${RED}○ ${status}${RESET}"
     fi
