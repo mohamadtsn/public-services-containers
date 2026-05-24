@@ -1,0 +1,40 @@
+#compdef pubservices
+# Zsh completion for pubservices
+
+_pubservices() {
+    local -a commands services
+
+    commands=(
+        'status:Show status of all services (health + ports)'
+        'info:Show connection info for all services'
+        'up:Start all services (or one specific service)'
+        'down:Stop all services'
+        'restart:Restart services (or one specific service)'
+        'reload-proxy:Reload Nginx configuration'
+        'logs:Follow service logs (or one specific service)'
+        'edit:Edit .env in $EDITOR'
+        'reset:Stop all services and delete data (DESTRUCTIVE)'
+        'help:Show help message'
+    )
+
+    services=(
+        'mysql:MySQL database container'
+        'redis:Redis cache container'
+        'nginx:Nginx reverse proxy container'
+        'phpmyadmin:phpMyAdmin web UI container'
+        'mailpit:Mailpit mail catcher container'
+        'minio:MinIO object storage container'
+    )
+
+    if (( CURRENT == 2 )); then
+        _describe 'command' commands
+    elif (( CURRENT == 3 )); then
+        case $words[2] in
+            up|restart|logs)
+                _describe 'service' services
+                ;;
+        esac
+    fi
+}
+
+_pubservices "$@"

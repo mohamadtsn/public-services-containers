@@ -40,6 +40,30 @@ if [[ -L "$BIN_LINK" ]]; then
     echo -e "${COLOR_GREEN}✓${COLOR_RESET} Removed symbolic link"
 fi
 
+# Remove shell completions
+_removed_completions=false
+
+[[ -f "/etc/bash_completion.d/pubservices" ]] && \
+    rm -f "/etc/bash_completion.d/pubservices" && _removed_completions=true
+
+for _zsh_dir in \
+    "/usr/local/share/zsh/site-functions" \
+    "/usr/share/zsh/vendor-completions" \
+    "/usr/share/zsh/site-functions"
+do
+    [[ -f "${_zsh_dir}/_pubservices" ]] && \
+        rm -f "${_zsh_dir}/_pubservices" && _removed_completions=true
+done
+unset _zsh_dir
+
+[[ -f "/usr/share/fish/completions/pubservices.fish" ]] && \
+    rm -f "/usr/share/fish/completions/pubservices.fish" && _removed_completions=true
+
+if [[ "$_removed_completions" == "true" ]]; then
+    echo -e "${COLOR_GREEN}✓${COLOR_RESET} Removed shell completions"
+fi
+unset _removed_completions
+
 # Ask about MySQL data
 if [[ -d "$INSTALL_DIR/data/mysql" ]] && compgen -G "$INSTALL_DIR/data/mysql/*" > /dev/null 2>&1; then
     echo ""

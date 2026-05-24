@@ -180,6 +180,7 @@ cp -r "${BASE_DIR}/nginx"       "$INSTALL_DIR/"
 cp -r "${BASE_DIR}/mysql"       "$INSTALL_DIR/"
 cp -r "${BASE_DIR}/scripts"     "$INSTALL_DIR/"
 cp -r "${BASE_DIR}/bin"         "$INSTALL_DIR/"
+cp -r "${BASE_DIR}/completion"  "$INSTALL_DIR/"
 cp    "${BASE_DIR}/Makefile"    "$INSTALL_DIR/"
 
 # Write version file
@@ -197,6 +198,41 @@ chmod +x "$INSTALL_DIR/scripts/"*.sh
 
 echo "Creating symbolic link..."
 ln -sf "$INSTALL_DIR/bin/pubservices" "$BIN_LINK"
+
+# ─── Install shell completions ────────────────────────────────────────────────
+
+BASH_COMPLETION_DIR="/etc/bash_completion.d"
+ZSH_COMPLETION_DIRS=(
+    "/usr/local/share/zsh/site-functions"
+    "/usr/share/zsh/vendor-completions"
+    "/usr/share/zsh/site-functions"
+)
+FISH_COMPLETION_DIR="/usr/share/fish/completions"
+
+if [[ -d "$BASH_COMPLETION_DIR" ]]; then
+    cp "$INSTALL_DIR/completion/pubservices.bash" "${BASH_COMPLETION_DIR}/pubservices"
+    echo "Installed bash completion → ${BASH_COMPLETION_DIR}/pubservices"
+fi
+
+_zsh_installed=false
+for _zsh_dir in "${ZSH_COMPLETION_DIRS[@]}"; do
+    if [[ -d "$_zsh_dir" ]]; then
+        cp "$INSTALL_DIR/completion/_pubservices" "${_zsh_dir}/_pubservices"
+        echo "Installed zsh completion  → ${_zsh_dir}/_pubservices"
+        _zsh_installed=true
+    fi
+done
+if [[ "$_zsh_installed" == "false" ]]; then
+    mkdir -p "${ZSH_COMPLETION_DIRS[0]}"
+    cp "$INSTALL_DIR/completion/_pubservices" "${ZSH_COMPLETION_DIRS[0]}/_pubservices"
+    echo "Installed zsh completion  → ${ZSH_COMPLETION_DIRS[0]}/_pubservices"
+fi
+unset _zsh_dir _zsh_installed
+
+if [[ -d "$FISH_COMPLETION_DIR" ]]; then
+    cp "$INSTALL_DIR/completion/pubservices.fish" "${FISH_COMPLETION_DIR}/pubservices.fish"
+    echo "Installed fish completion → ${FISH_COMPLETION_DIR}/pubservices.fish"
+fi
 
 # Create data directories (never overwrite user data)
 mkdir -p "$INSTALL_DIR/data/mysql"
@@ -266,5 +302,8 @@ else
     echo -e "  3. After setup, use ${COLOR_CYAN}pubservices${COLOR_RESET} from anywhere:"
     echo -e "       ${COLOR_GREEN}pubservices status${COLOR_RESET}  Show health + ports"
     echo -e "       ${COLOR_GREEN}pubservices help${COLOR_RESET}    All CLI commands"
+    echo ""
+    echo -e "  ${COLOR_BLUE}Tab completion${COLOR_RESET} is installed for bash, zsh, and fish."
+    echo -e "  Reload your shell or run ${COLOR_YELLOW}exec \$SHELL${COLOR_RESET} to activate it."
 fi
 echo ""

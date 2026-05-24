@@ -27,10 +27,10 @@ jobs:
       - name: Run shellcheck on scripts
         run: |
           if command -v shellcheck >/dev/null 2>&1; then
-            shellcheck scripts/*.sh bin/pubservices
+            shellcheck scripts/*.sh bin/pubservices completion/pubservices.bash
             echo "✓ shellcheck passed"
           else
             sudo apt-get install -y shellcheck
-            shellcheck scripts/*.sh bin/pubservices
+            shellcheck scripts/*.sh bin/pubservices completion/pubservices.bash
             echo "✓ shellcheck passed"
           fi

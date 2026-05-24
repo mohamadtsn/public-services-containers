@@ -96,7 +96,7 @@ release-dry: ## Preview next patch release (no changes made)
 lint: ## Run shellcheck on all shell scripts
 	@if command -v shellcheck >/dev/null 2>&1; then \
 		find scripts -name "*.sh" -exec shellcheck {} +; \
-		shellcheck bin/pubservices; \
+		shellcheck bin/pubservices completion/pubservices.bash; \
 		echo "$(GREEN)✓ Shellcheck passed$(RESET)"; \
 	else \
 		echo "$(YELLOW)! shellcheck not installed — skipping$(RESET)"; \
