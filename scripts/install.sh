@@ -24,6 +24,13 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 
+# Capture the real user who invoked sudo (for file ownership)
+REAL_USER="${SUDO_USER:-}"
+REAL_GROUP=""
+if [[ -n "$REAL_USER" ]]; then
+    REAL_GROUP="$(id -gn "$REAL_USER" 2>/dev/null || echo "$REAL_USER")"
+fi
+
 # ─── Detect existing installation ─────────────────────────────────────────────
 
 IS_UPDATE=false
@@ -206,6 +213,14 @@ fi
 chown -R root:root "$INSTALL_DIR"
 chmod 755 "$INSTALL_DIR"
 
+# Give the real user ownership of directories they need to write to
+if [[ -n "$REAL_USER" ]]; then
+    chown -R "${REAL_USER}:${REAL_GROUP}" "${INSTALL_DIR}/data"
+    chown -R "${REAL_USER}:${REAL_GROUP}" "${INSTALL_DIR}/nginx/site-enabled"
+    chown -R "${REAL_USER}:${REAL_GROUP}" "${INSTALL_DIR}/nginx/certificates"
+    [[ -f "${INSTALL_DIR}/.env" ]] && chown "${REAL_USER}:${REAL_GROUP}" "${INSTALL_DIR}/.env"
+fi
+
 # ─── Success message ───────────────────────────────────────────────────────────
 
 FINAL_VERSION="$(tr -d '[:space:]' < "$VERSION_FILE" 2>/dev/null)"
@@ -227,16 +242,29 @@ else
 fi
 
 echo ""
-echo -e "${COLOR_BLUE}  ┌──────────────────────────────────────────────────────────────┐${COLOR_RESET}"
-echo -e "${COLOR_BLUE}  │${COLOR_RESET}                      Quick Start                              ${COLOR_BLUE}│${COLOR_RESET}"
-echo -e "${COLOR_BLUE}  ├──────────────────────────────────┬───────────────────────────┤${COLOR_RESET}"
-echo -e "${COLOR_BLUE}  │${COLOR_RESET}  ${COLOR_GREEN}cd ${INSTALL_DIR}${COLOR_RESET}      ${COLOR_BLUE}│${COLOR_RESET}  Go to install dir         ${COLOR_BLUE}│${COLOR_RESET}"
-echo -e "${COLOR_BLUE}  │${COLOR_RESET}  ${COLOR_GREEN}make up${COLOR_RESET}                          ${COLOR_BLUE}│${COLOR_RESET}  Start MySQL + Redis       ${COLOR_BLUE}│${COLOR_RESET}"
-echo -e "${COLOR_BLUE}  │${COLOR_RESET}  ${COLOR_GREEN}make up-proxy${COLOR_RESET}                    ${COLOR_BLUE}│${COLOR_RESET}  Start + Nginx             ${COLOR_BLUE}│${COLOR_RESET}"
-echo -e "${COLOR_BLUE}  │${COLOR_RESET}  ${COLOR_GREEN}make up-full${COLOR_RESET}                     ${COLOR_BLUE}│${COLOR_RESET}  Start everything          ${COLOR_BLUE}│${COLOR_RESET}"
-echo -e "${COLOR_BLUE}  │${COLOR_RESET}  ${COLOR_GREEN}make status${COLOR_RESET}                      ${COLOR_BLUE}│${COLOR_RESET}  Show service status       ${COLOR_BLUE}│${COLOR_RESET}"
-echo -e "${COLOR_BLUE}  │${COLOR_RESET}  ${COLOR_GREEN}pubservices help${COLOR_RESET}                 ${COLOR_BLUE}│${COLOR_RESET}  Show CLI commands         ${COLOR_BLUE}│${COLOR_RESET}"
-echo -e "${COLOR_BLUE}  └──────────────────────────────────┴───────────────────────────┘${COLOR_RESET}"
-echo ""
-echo -e "  Config: ${COLOR_YELLOW}${INSTALL_DIR}/.env${COLOR_RESET}"
+if [[ "$IS_UPDATE" == "true" ]]; then
+    echo -e "${COLOR_BLUE}  Quick Start${COLOR_RESET}"
+    echo ""
+    echo -e "  ${COLOR_GREEN}pubservices status${COLOR_RESET}         Show service health + ports"
+    echo -e "  ${COLOR_GREEN}pubservices restart${COLOR_RESET}        Restart all services"
+    echo -e "  ${COLOR_GREEN}pubservices logs [service]${COLOR_RESET} Follow logs"
+    echo -e "  ${COLOR_GREEN}pubservices info${COLOR_RESET}           Show connection details"
+    echo -e "  ${COLOR_GREEN}pubservices help${COLOR_RESET}           All available commands"
+    echo ""
+    echo -e "  For granular control: cd ${COLOR_YELLOW}${INSTALL_DIR}${COLOR_RESET} && make help"
+else
+    echo -e "${COLOR_BLUE}  Quick Start${COLOR_RESET}"
+    echo ""
+    echo -e "  1. Review config:    ${COLOR_YELLOW}${INSTALL_DIR}/.env${COLOR_RESET}"
+    echo ""
+    echo -e "  2. Start services:"
+    echo -e "       ${COLOR_GREEN}cd ${INSTALL_DIR}${COLOR_RESET}"
+    echo -e "       ${COLOR_GREEN}make up${COLOR_RESET}           MySQL + Redis only"
+    echo -e "       ${COLOR_GREEN}make up-proxy${COLOR_RESET}     + Nginx"
+    echo -e "       ${COLOR_GREEN}make up-full${COLOR_RESET}      Everything"
+    echo ""
+    echo -e "  3. After setup, use ${COLOR_CYAN}pubservices${COLOR_RESET} from anywhere:"
+    echo -e "       ${COLOR_GREEN}pubservices status${COLOR_RESET}  Show health + ports"
+    echo -e "       ${COLOR_GREEN}pubservices help${COLOR_RESET}    All CLI commands"
+fi
 echo ""

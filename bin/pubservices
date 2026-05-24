@@ -11,7 +11,8 @@ BOLD='\033[1m'
 DIM='\033[2m'
 RESET='\033[0m'
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 BASE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 cd "$BASE_DIR"
@@ -50,6 +51,16 @@ usage() {
 }
 
 # ─── Helpers ───────────────────────────────────────────────────────────────────
+
+# Print a status table row with ANSI-aware column alignment
+_row() {
+    local name="$1" stat="$2" port="$3"
+    local bare pad
+    bare="$(printf '%s' "$stat" | sed $'s/\033\\[[0-9;]*m//g')"
+    pad=$(( 20 - ${#bare} ))
+    printf "  ${CYAN}│${RESET}  %-12s  %s%*s  %-24s ${CYAN}│${RESET}\n" \
+        "$name" "$stat" "$pad" "" "$port"
+}
 
 container_status() {
     local name="$1"
@@ -113,12 +124,12 @@ cmd_status() {
 
     echo ""
     echo -e "  ${CYAN}╭─ Public Services ─────────────────────────────────────────────╮${RESET}"
-    printf "  ${CYAN}│${RESET}  %-12s  %-22b  %-24s ${CYAN}│${RESET}\n" "MySQL"      "$mysql_st"    "localhost:${mysql_port}"
-    printf "  ${CYAN}│${RESET}  %-12s  %-22b  %-24s ${CYAN}│${RESET}\n" "Redis"      "$redis_st"    "localhost:${redis_port}"
-    printf "  ${CYAN}│${RESET}  %-12s  %-22b  %-24s ${CYAN}│${RESET}\n" "Nginx"      "$nginx_st"    ":${http_port} / :${https_port}"
-    printf "  ${CYAN}│${RESET}  %-12s  %-22b  %-24s ${CYAN}│${RESET}\n" "phpMyAdmin" "$pma_st"      "http://localhost:${pma_port}"
-    printf "  ${CYAN}│${RESET}  %-12s  %-22b  %-24s ${CYAN}│${RESET}\n" "Mailpit"    "$mailpit_st"  "http://localhost:${mailpit_http}"
-    printf "  ${CYAN}│${RESET}  %-12s  %-22b  %-24s ${CYAN}│${RESET}\n" "MinIO"      "$minio_st"    "http://localhost:${minio_console} (API: ${minio_api})"
+    _row "MySQL"      "$mysql_st"   "localhost:${mysql_port}"
+    _row "Redis"      "$redis_st"   "localhost:${redis_port}"
+    _row "Nginx"      "$nginx_st"   ":${http_port} / :${https_port}"
+    _row "phpMyAdmin" "$pma_st"     "http://localhost:${pma_port}"
+    _row "Mailpit"    "$mailpit_st" "http://localhost:${mailpit_http}"
+    _row "MinIO"      "$minio_st"   ":${minio_console} (API :${minio_api})"
     echo -e "  ${CYAN}╰───────────────────────────────────────────────────────────────╯${RESET}"
     echo ""
 }
@@ -232,7 +243,7 @@ cmd_reset() {
         exit 0
     fi
     docker compose "${COMPOSE_PROFILES[@]}" down -v
-    sudo rm -rf "${BASE_DIR}/data/mysql/"* "${BASE_DIR}/data/redis/"* "${BASE_DIR}/data/minio/"*
+    rm -rf "${BASE_DIR}/data/mysql/"* "${BASE_DIR}/data/redis/"* "${BASE_DIR}/data/minio/"*
     echo -e "\n  ${GREEN}✓ All data removed.${RESET}\n"
 }
 
