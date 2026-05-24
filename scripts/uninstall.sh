@@ -29,7 +29,9 @@ fi
 # Stop running containers before removing files
 if [[ -f "$INSTALL_DIR/docker-compose.yml" ]]; then
     echo "Stopping containers..."
-    cd "$INSTALL_DIR" && docker compose --profile proxy --profile tools down 2>/dev/null || true
+    if cd "$INSTALL_DIR"; then
+        docker compose --profile proxy --profile pma --profile mail --profile storage down 2>/dev/null || true
+    fi
 fi
 
 # Remove symbolic link
