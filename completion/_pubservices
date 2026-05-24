@@ -13,6 +13,7 @@ _pubservices() {
         'reload-proxy:Reload Nginx configuration'
         'logs:Follow service logs (or one specific service)'
         'edit:Edit .env in $EDITOR'
+        'update:Check for updates and install if available'
         'reset:Stop all services and delete data (DESTRUCTIVE)'
         'help:Show help message'
     )

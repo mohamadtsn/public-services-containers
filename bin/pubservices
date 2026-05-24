@@ -38,6 +38,7 @@ usage() {
     echo -e "    ${GREEN}reload-proxy${RESET}      Reload Nginx configuration (nginx -s reload)"
     echo -e "    ${GREEN}logs${RESET} [service]    Follow service logs (or one specific service)"
     echo -e "    ${GREEN}edit${RESET}              Edit .env in \$EDITOR"
+    echo -e "    ${GREEN}update${RESET}            Check for updates and install if available"
     echo -e "    ${GREEN}reset${RESET}             Stop all services and delete data (DESTRUCTIVE)"
     echo -e "    ${GREEN}help${RESET}              Show this help message"
     echo ""
@@ -239,6 +240,55 @@ cmd_edit() {
     ${EDITOR:-${VISUAL:-nano}} "$env_file"
 }
 
+cmd_update() {
+    local repo="mohamadtsn/public-services-containers"
+    local current_clean="${VERSION#v}"
+
+    echo -e "${CYAN}›${RESET} Checking for updates..."
+
+    local latest_tag=""
+    if command -v curl &>/dev/null; then
+        latest_tag=$(curl -fsSL "https://api.github.com/repos/${repo}/releases/latest" \
+            2>/dev/null | grep '"tag_name"' | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/')
+    elif command -v wget &>/dev/null; then
+        latest_tag=$(wget -qO- "https://api.github.com/repos/${repo}/releases/latest" \
+            2>/dev/null | grep '"tag_name"' | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/')
+    else
+        echo -e "${RED}✗ curl or wget is required to check for updates.${RESET}"
+        exit 1
+    fi
+
+    if [[ -z "$latest_tag" ]]; then
+        echo -e "${RED}✗ Could not fetch latest version — check your internet connection.${RESET}"
+        exit 1
+    fi
+
+    local latest_version="${latest_tag#v}"
+
+    if [[ "$current_clean" == "$latest_version" ]]; then
+        echo -e "${GREEN}✓ Already up to date (v${current_clean}).${RESET}"
+        echo ""
+        exit 0
+    fi
+
+    echo ""
+    echo -e "  Installed : ${GREEN}v${current_clean}${RESET}"
+    echo -e "  Available : ${CYAN}${latest_tag}${RESET}"
+    echo ""
+    read -r -p "  Update from v${current_clean} → ${latest_tag}? [Y/n]: " confirm </dev/tty
+    confirm="${confirm:-y}"
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+        echo -e "\n  ${YELLOW}Update cancelled.${RESET}\n"
+        exit 0
+    fi
+    echo ""
+
+    local install_url="https://raw.githubusercontent.com/${repo}/master/scripts/install.sh"
+    echo -e "${CYAN}›${RESET} Running update installer..."
+    echo ""
+    sudo bash -c "AUTO_CONFIRM=1 bash <(curl -fsSL '${install_url}')"
+}
+
 cmd_reset() {
     echo -e "${RED}${BOLD}Warning: This will permanently delete all MySQL, Redis, and MinIO data!${RESET}"
     echo ""
@@ -266,6 +316,7 @@ case "$COMMAND" in
     reload-proxy)  cmd_reload ;;
     logs)    cmd_logs "$@" ;;
     edit)    cmd_edit ;;
+    update)  cmd_update ;;
     reset)   cmd_reset ;;
     help|--help|-h) usage ;;
     *)
