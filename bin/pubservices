@@ -1,0 +1,260 @@
+#!/bin/bash
+# bin/pubservices — Public Services Containers CLI
+
+set -e
+
+CYAN='\033[0;36m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+RED='\033[0;31m'
+BOLD='\033[1m'
+DIM='\033[2m'
+RESET='\033[0m'
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BASE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+cd "$BASE_DIR"
+
+VERSION_FILE="${BASE_DIR}/VERSION"
+VERSION="$(tr -d '[:space:]' < "$VERSION_FILE" 2>/dev/null || echo "unknown")"
+
+COMPOSE_PROFILES=(--profile proxy --profile pma --profile mail --profile storage)
+
+usage() {
+    echo ""
+    echo -e "  ${CYAN}${BOLD}pubservices${RESET} ${DIM}v${VERSION}${RESET}  —  Public Services Containers CLI"
+    echo ""
+    echo -e "  ${BOLD}Usage:${RESET}"
+    echo -e "    pubservices <command> [service]"
+    echo ""
+    echo -e "  ${BOLD}Commands:${RESET}"
+    echo -e "    ${GREEN}status${RESET}            Show status of all services (health + ports)"
+    echo -e "    ${GREEN}info${RESET}              Show connection info for all services"
+    echo -e "    ${GREEN}up${RESET} [service]      Start all services (or one specific service)"
+    echo -e "    ${GREEN}down${RESET}              Stop all services"
+    echo -e "    ${GREEN}restart${RESET} [service] Restart services (or one specific service)"
+    echo -e "    ${GREEN}reload-proxy${RESET}      Reload Nginx configuration (nginx -s reload)"
+    echo -e "    ${GREEN}logs${RESET} [service]    Follow service logs (or one specific service)"
+    echo -e "    ${GREEN}edit${RESET}              Edit .env in \$EDITOR"
+    echo -e "    ${GREEN}reset${RESET}             Stop all services and delete data (DESTRUCTIVE)"
+    echo -e "    ${GREEN}help${RESET}              Show this help message"
+    echo ""
+    echo -e "  ${BOLD}Examples:${RESET}"
+    echo -e "    pubservices up"
+    echo -e "    pubservices logs mysql"
+    echo -e "    pubservices restart redis"
+    echo -e "    pubservices reload-proxy"
+    echo -e "    pubservices edit"
+    echo ""
+}
+
+# ─── Helpers ───────────────────────────────────────────────────────────────────
+
+container_status() {
+    local name="$1"
+    local status
+    status=$(docker inspect --format='{{.State.Status}}' "$name" 2>/dev/null || echo "not found")
+    local health
+    health=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$name" 2>/dev/null || echo "")
+
+    if [[ "$status" == "running" ]]; then
+        if [[ "$health" == "healthy" ]]; then
+            echo -e "${GREEN}● running${RESET}"
+        elif [[ "$health" == "unhealthy" ]]; then
+            echo -e "${RED}● unhealthy${RESET}"
+        elif [[ "$health" == "starting" ]]; then
+            echo -e "${YELLOW}● starting${RESET}"
+        else
+            echo -e "${GREEN}● running${RESET}"
+        fi
+    elif [[ "$status" == "not found" ]]; then
+        echo -e "${DIM}○ stopped${RESET}"
+    else
+        echo -e "${RED}○ ${status}${RESET}"
+    fi
+}
+
+load_env() {
+    if [[ -f "${BASE_DIR}/.env" ]]; then
+        # shellcheck disable=SC1091
+        set -a; source "${BASE_DIR}/.env"; set +a
+    fi
+}
+
+# ─── Commands ──────────────────────────────────────────────────────────────────
+
+cmd_status() {
+    load_env
+
+    local mysql_name="${MYSQL_CONTAINER_NAME:-mysql-main}"
+    local redis_name="${REDIS_CONTAINER_NAME:-redis-main}"
+    local nginx_name="${NGINX_CONTAINER_NAME:-nginx-main}"
+    local pma_name="${PMA_CONTAINER_NAME:-phpmyadmin}"
+    local mailpit_name="${MAILPIT_CONTAINER_NAME:-mailpit}"
+    local minio_name="${MINIO_CONTAINER_NAME:-minio}"
+
+    local mysql_port="${MYSQL_PORT:-43306}"
+    local redis_port="${REDIS_PORT:-46379}"
+    local http_port="${NGINX_HTTP_PORT:-80}"
+    local https_port="${NGINX_HTTPS_PORT:-443}"
+    local pma_port="${PMA_PORT:-18080}"
+    local mailpit_http="${MAILPIT_HTTP_PORT:-8025}"
+    local minio_console="${MINIO_CONSOLE_PORT:-9001}"
+    local minio_api="${MINIO_API_PORT:-9000}"
+
+    local mysql_st redis_st nginx_st pma_st mailpit_st minio_st
+    mysql_st=$(container_status "$mysql_name")
+    redis_st=$(container_status "$redis_name")
+    nginx_st=$(container_status "$nginx_name")
+    pma_st=$(container_status "$pma_name")
+    mailpit_st=$(container_status "$mailpit_name")
+    minio_st=$(container_status "$minio_name")
+
+    echo ""
+    echo -e "  ${CYAN}╭─ Public Services ─────────────────────────────────────────────╮${RESET}"
+    printf "  ${CYAN}│${RESET}  %-12s  %-22b  %-24s ${CYAN}│${RESET}\n" "MySQL"      "$mysql_st"    "localhost:${mysql_port}"
+    printf "  ${CYAN}│${RESET}  %-12s  %-22b  %-24s ${CYAN}│${RESET}\n" "Redis"      "$redis_st"    "localhost:${redis_port}"
+    printf "  ${CYAN}│${RESET}  %-12s  %-22b  %-24s ${CYAN}│${RESET}\n" "Nginx"      "$nginx_st"    ":${http_port} / :${https_port}"
+    printf "  ${CYAN}│${RESET}  %-12s  %-22b  %-24s ${CYAN}│${RESET}\n" "phpMyAdmin" "$pma_st"      "http://localhost:${pma_port}"
+    printf "  ${CYAN}│${RESET}  %-12s  %-22b  %-24s ${CYAN}│${RESET}\n" "Mailpit"    "$mailpit_st"  "http://localhost:${mailpit_http}"
+    printf "  ${CYAN}│${RESET}  %-12s  %-22b  %-24s ${CYAN}│${RESET}\n" "MinIO"      "$minio_st"    "http://localhost:${minio_console} (API: ${minio_api})"
+    echo -e "  ${CYAN}╰───────────────────────────────────────────────────────────────╯${RESET}"
+    echo ""
+}
+
+cmd_info() {
+    load_env
+
+    local mysql_port="${MYSQL_PORT:-43306}"
+    local redis_port="${REDIS_PORT:-46379}"
+    local pma_port="${PMA_PORT:-18080}"
+    local mailpit_http="${MAILPIT_HTTP_PORT:-8025}"
+    local mailpit_smtp="${MAILPIT_SMTP_PORT:-1025}"
+    local minio_console="${MINIO_CONSOLE_PORT:-9001}"
+    local minio_api="${MINIO_API_PORT:-9000}"
+
+    echo ""
+    echo -e "  ${CYAN}${BOLD}Connection Info${RESET}"
+    echo ""
+    echo -e "  ${BOLD}MySQL${RESET}"
+    echo -e "    Host     : localhost"
+    echo -e "    Port     : ${mysql_port}"
+    echo -e "    Database : ${MYSQL_DATABASE:-main}"
+    echo -e "    User     : ${MYSQL_USER:-main_user}"
+    echo -e "    Password : ${MYSQL_PASSWORD:-password}"
+    echo ""
+    echo -e "  ${BOLD}Redis${RESET}"
+    echo -e "    Host     : localhost"
+    echo -e "    Port     : ${redis_port}"
+    echo ""
+    echo -e "  ${BOLD}phpMyAdmin${RESET}"
+    echo -e "    URL      : http://localhost:${pma_port}"
+    echo ""
+    echo -e "  ${BOLD}Mailpit${RESET}"
+    echo -e "    UI       : http://localhost:${mailpit_http}"
+    echo -e "    SMTP     : localhost:${mailpit_smtp}"
+    echo ""
+    echo -e "  ${BOLD}MinIO${RESET}"
+    echo -e "    Console  : http://localhost:${minio_console}"
+    echo -e "    API      : http://localhost:${minio_api}"
+    echo -e "    User     : ${MINIO_ROOT_USER:-minioadmin}"
+    echo -e "    Password : ${MINIO_ROOT_PASSWORD:-minioadmin}"
+    echo ""
+}
+
+cmd_up() {
+    local service="${1:-}"
+    if [[ -n "$service" ]]; then
+        docker compose up -d "$service"
+    else
+        docker compose "${COMPOSE_PROFILES[@]}" up -d
+    fi
+}
+
+cmd_down() {
+    docker compose "${COMPOSE_PROFILES[@]}" down
+}
+
+cmd_restart() {
+    local service="${1:-}"
+    if [[ -n "$service" ]]; then
+        docker compose restart "$service"
+    else
+        docker compose "${COMPOSE_PROFILES[@]}" restart
+    fi
+}
+
+cmd_reload() {
+    load_env
+    local nginx_name="${NGINX_CONTAINER_NAME:-nginx-main}"
+
+    if ! docker inspect "$nginx_name" &>/dev/null; then
+        echo -e "${RED}✗ Nginx container '${nginx_name}' is not running.${RESET}"
+        exit 1
+    fi
+
+    echo -e "${CYAN}›${RESET} Testing Nginx configuration..."
+    if docker exec "$nginx_name" nginx -t; then
+        echo -e "${CYAN}›${RESET} Reloading Nginx..."
+        docker exec "$nginx_name" nginx -s reload
+        echo -e "${GREEN}✓ Nginx reloaded successfully.${RESET}"
+    else
+        echo -e "${RED}✗ Nginx configuration test failed — not reloading.${RESET}"
+        exit 1
+    fi
+}
+
+cmd_logs() {
+    local service="${1:-}"
+    if [[ -n "$service" ]]; then
+        docker compose logs -f "$service"
+    else
+        docker compose "${COMPOSE_PROFILES[@]}" logs -f
+    fi
+}
+
+cmd_edit() {
+    local env_file="${BASE_DIR}/.env"
+    if [[ ! -f "$env_file" ]]; then
+        echo -e "${YELLOW}⚠  .env not found — copying from .env.example${RESET}"
+        cp "${BASE_DIR}/.env.example" "$env_file"
+    fi
+    ${EDITOR:-${VISUAL:-nano}} "$env_file"
+}
+
+cmd_reset() {
+    echo -e "${RED}${BOLD}Warning: This will permanently delete all MySQL, Redis, and MinIO data!${RESET}"
+    echo ""
+    read -r -p "  Type 'yes' to confirm: " confirm
+    if [[ "$confirm" != "yes" ]]; then
+        echo -e "\n  ${YELLOW}Reset cancelled.${RESET}\n"
+        exit 0
+    fi
+    docker compose "${COMPOSE_PROFILES[@]}" down -v
+    sudo rm -rf "${BASE_DIR}/data/mysql/"* "${BASE_DIR}/data/redis/"* "${BASE_DIR}/data/minio/"*
+    echo -e "\n  ${GREEN}✓ All data removed.${RESET}\n"
+}
+
+# ─── Dispatch ──────────────────────────────────────────────────────────────────
+
+COMMAND="${1:-help}"
+shift || true
+
+case "$COMMAND" in
+    status)  cmd_status ;;
+    info)    cmd_info ;;
+    up)      cmd_up "$@" ;;
+    down)    cmd_down ;;
+    restart) cmd_restart "$@" ;;
+    reload-proxy)  cmd_reload ;;
+    logs)    cmd_logs "$@" ;;
+    edit)    cmd_edit ;;
+    reset)   cmd_reset ;;
+    help|--help|-h) usage ;;
+    *)
+        echo -e "${RED}Unknown command: ${COMMAND}${RESET}"
+        usage
+        exit 1
+        ;;
+esac

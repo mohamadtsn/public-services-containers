@@ -1,0 +1,2 @@
+# Disable SC1091: not following external .env files (runtime dynamic)
+disable=SC1091
