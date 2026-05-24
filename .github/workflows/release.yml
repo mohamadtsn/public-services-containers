@@ -1,0 +1,53 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Validate docker-compose syntax
+        run: docker compose config > /dev/null
+
+      - name: Build release archive
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          ARCHIVE_NAME="public-services-containers-${VERSION}.tar.gz"
+
+          tar -czf "/tmp/$ARCHIVE_NAME" \
+            --transform "s|^\.|public-services-containers-${VERSION#v}|" \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='.idea' \
+            --exclude='data/mysql' \
+            --exclude='data/redis' \
+            --exclude='*.log' \
+            .
+
+          mv "/tmp/$ARCHIVE_NAME" .
+          echo "ARCHIVE_NAME=$ARCHIVE_NAME" >> "$GITHUB_ENV"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Public Services Containers ${{ steps.version.outputs.VERSION }}"
+          tag_name: ${{ steps.version.outputs.VERSION }}
+          draft: false
+          prerelease: ${{ contains(steps.version.outputs.VERSION, '-') }}
+          generate_release_notes: true
+          files: ${{ env.ARCHIVE_NAME }}

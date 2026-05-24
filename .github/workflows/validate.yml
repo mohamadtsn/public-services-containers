@@ -1,0 +1,35 @@
+name: Validate
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  validate:
+    name: Validate Configuration
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate docker-compose syntax
+        run: |
+          cp .env.example .env
+          docker compose config > /dev/null
+          echo "✓ docker-compose syntax is valid"
+
+      - name: Run shellcheck on scripts
+        run: |
+          if command -v shellcheck >/dev/null 2>&1; then
+            shellcheck scripts/*.sh bin/pubservices
+            echo "✓ shellcheck passed"
+          else
+            sudo apt-get install -y shellcheck
+            shellcheck scripts/*.sh bin/pubservices
+            echo "✓ shellcheck passed"
+          fi
