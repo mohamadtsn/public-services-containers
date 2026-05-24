@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.1.0] - 2026-05-24
+## [1.0.0] - 2026-05-24
 
 ### Added
 - `Makefile` with targets: `up`, `up-proxy`, `up-pma`, `up-mail`, `up-storage`, `up-full`, `down`, `restart`, `status`, `logs`, `reset`, `build`, `install`, `uninstall`, `release`, `lint`, `backup`, `restore`
@@ -55,4 +55,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `phpmyadmin/config.inc.php` — auto-login without password, `AllowNoPassword = true` (security risk)
 - `nginx/certificates/.gitignore` and `nginx/ssl/.gitignore` (consolidated into root `.gitignore`)
 
-[0.1.0]: https://github.com/mohamadtsn/public-services-containers/releases/tag/v0.1.0
+[1.0.0]: https://github.com/mohamadtsn/public-services-containers/releases/tag/v1.0.0
