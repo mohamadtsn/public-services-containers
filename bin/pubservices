@@ -39,8 +39,11 @@ usage() {
     echo -e "    ${GREEN}logs${RESET} [service]    Follow service logs (or one specific service)"
     echo -e "    ${GREEN}edit${RESET}              Edit .env in \$EDITOR"
     echo -e "    ${GREEN}update${RESET}            Check for updates and install if available"
-    echo -e "    ${GREEN}reset${RESET}             Stop all services and delete data (DESTRUCTIVE)"
-    echo -e "    ${GREEN}help${RESET}              Show this help message"
+    echo -e "    ${GREEN}static-add${RESET} <name> [src]  Sync a build directory into nginx/static/ (uses rsync)"
+    echo -e "    ${GREEN}static-remove${RESET} <name>     Remove a static site from nginx/static/"
+    echo -e "    ${GREEN}static-list${RESET}              List static sites in nginx/static/"
+    echo -e "    ${GREEN}reset${RESET}                    Stop all services and delete data (DESTRUCTIVE)"
+    echo -e "    ${GREEN}help${RESET}                     Show this help message"
     echo ""
     echo -e "  ${BOLD}Examples:${RESET}"
     echo -e "    pubservices up"
@@ -289,6 +292,116 @@ cmd_update() {
     sudo bash -c "AUTO_CONFIRM=1 bash <(curl -fsSL '${install_url}')"
 }
 
+cmd_static_add() {
+    local name="${1:-}"
+    local src="${2:-}"
+
+    if [[ -z "$name" ]]; then
+        read -r -p "  Project name: " name </dev/tty
+    fi
+    if [[ -z "$name" ]]; then
+        echo -e "${RED}✗ Name is required.${RESET}"
+        exit 1
+    fi
+
+    if [[ -z "$src" ]]; then
+        read -r -p "  Source directory: " src </dev/tty
+    fi
+    if [[ -z "$src" ]]; then
+        echo -e "${RED}✗ Source directory is required.${RESET}"
+        exit 1
+    fi
+
+    # Expand ~ manually since it may come from user input
+    src="${src/#\~/$HOME}"
+
+    if [[ ! -d "$src" ]]; then
+        echo -e "${RED}✗ Source directory not found: ${src}${RESET}"
+        exit 1
+    fi
+
+    local dest="${BASE_DIR}/nginx/static/${name}"
+    mkdir -p "$dest"
+
+    echo -e "${CYAN}›${RESET} Syncing into nginx/static/${name}..."
+
+    if command -v rsync &>/dev/null; then
+        rsync -a --delete --info=progress2 "${src%/}/" "${dest}/"
+    else
+        echo -e "${YELLOW}⚠  rsync not found — falling back to cp${RESET}"
+        rm -rf "${dest:?}"
+        mkdir -p "$dest"
+        cp -r "${src%/}/." "$dest/"
+    fi
+
+    echo ""
+    echo -e "  ${GREEN}✓ Synced to nginx/static/${name}${RESET}"
+    echo -e "  ${DIM}Container path: /srv/static/${name}${RESET}"
+    echo ""
+    echo -e "  To register with devproxy (first time):"
+    echo -e "  ${CYAN}devproxy create -h myapp.local --static --root /srv/static/${name}${RESET}"
+    echo -e "  ${DIM}For subsequent syncs just run this command again — no devproxy step needed.${RESET}"
+    echo ""
+}
+
+cmd_static_remove() {
+    local name="${1:-}"
+
+    if [[ -z "$name" ]]; then
+        read -r -p "  Project name to remove: " name </dev/tty
+    fi
+    if [[ -z "$name" ]]; then
+        echo -e "${RED}✗ Name is required.${RESET}"
+        exit 1
+    fi
+
+    local dest="${BASE_DIR}/nginx/static/${name}"
+
+    if [[ ! -d "$dest" ]]; then
+        echo -e "${RED}✗ Static project not found: ${name}${RESET}"
+        exit 1
+    fi
+
+    echo -e "${RED}${BOLD}Warning: This will delete nginx/static/${name}${RESET}"
+    read -r -p "  Confirm? [y/N]: " confirm </dev/tty
+    confirm="${confirm:-n}"
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+        echo -e "  ${YELLOW}Cancelled.${RESET}"
+        exit 0
+    fi
+
+    rm -rf "${dest:?}"
+    echo -e "${GREEN}✓ Removed nginx/static/${name}${RESET}"
+    echo -e "${DIM}  Run 'devproxy remove -h DOMAIN' to clean up the nginx config too.${RESET}"
+    echo ""
+}
+
+cmd_static_list() {
+    local static_dir="${BASE_DIR}/nginx/static"
+
+    echo ""
+    echo -e "  ${CYAN}${BOLD}Static Sites${RESET}  ${DIM}(nginx/static/ → /srv/static/)${RESET}"
+    echo ""
+
+    local found=0
+    for dir in "${static_dir}"/*/; do
+        [[ -d "$dir" ]] || continue
+        local name size files
+        name=$(basename "$dir")
+        size=$(du -sh "$dir" 2>/dev/null | cut -f1)
+        files=$(find "$dir" -type f 2>/dev/null | wc -l | tr -d ' ')
+        echo -e "  ${GREEN}●${RESET} ${BOLD}${name}${RESET}  ${DIM}${files} files, ${size}${RESET}"
+        echo -e "    ${DIM}/srv/static/${name}${RESET}"
+        found=1
+    done
+
+    if [[ "$found" -eq 0 ]]; then
+        echo -e "  ${DIM}No static sites found.${RESET}"
+        echo -e "  ${DIM}Use: pubservices static-add <name> <source-dir>${RESET}"
+    fi
+    echo ""
+}
+
 cmd_reset() {
     echo -e "${RED}${BOLD}Warning: This will permanently delete all MySQL, Redis, and MinIO data!${RESET}"
     echo ""
@@ -317,6 +430,9 @@ case "$COMMAND" in
     logs)    cmd_logs "$@" ;;
     edit)    cmd_edit ;;
     update)  cmd_update ;;
+    static-add)    cmd_static_add "$@" ;;
+    static-remove) cmd_static_remove "$@" ;;
+    static-list)   cmd_static_list ;;
     reset)   cmd_reset ;;
     help|--help|-h) usage ;;
     *)

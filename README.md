@@ -171,10 +171,13 @@ pubservices info            # Show connection details
 pubservices up [service]    # Start services
 pubservices down            # Stop all services
 pubservices restart [svc]   # Restart services
-pubservices reload-proxy    # Reload Nginx config (nginx -s reload)
-pubservices logs [service]  # Follow logs
-pubservices edit            # Edit .env in $EDITOR
-pubservices reset           # Delete all data (DESTRUCTIVE)
+pubservices reload-proxy            # Reload Nginx config (nginx -s reload)
+pubservices logs [service]          # Follow logs
+pubservices edit                    # Edit .env in $EDITOR
+pubservices static-add <name> [src] # Sync build dir into nginx/static/ via rsync
+pubservices static-remove <name>    # Remove static site from nginx/static/
+pubservices static-list             # List static sites in nginx/static/
+pubservices reset                   # Delete all data (DESTRUCTIVE)
 ```
 
 ## Adding a New Site to Nginx
@@ -207,30 +210,37 @@ For apps with a backend (Laravel, Node, etc.), nginx proxies traffic to a runnin
 
 `nginx/static/` is permanently mounted into the container at `/srv/static/` (read-only). Three approaches are available:
 
-### Option A — Copy build output to `nginx/static/` (recommended)
+### Option A — `pubservices static-add` with rsync (recommended)
+
+Use the built-in CLI command to sync a build directory efficiently:
 
 ```bash
-# Build your project
-cd ~/projects/myapp && npm run build   # generates dist/
-
-# Copy the build into nginx/static/
-cp -r dist/ /path/to/public-services/nginx/static/myapp
-
-# Register with local-dev-proxy (path is the container-internal path)
+# First time: build + sync + register
+cd ~/projects/myapp && npm run build
+pubservices static-add myapp ~/projects/myapp/dist
 devproxy create -h myapp.local --static --root /srv/static/myapp
 
-# Reload nginx
-pubservices reload-proxy
+# After each rebuild: just sync again (rsync only transfers changed files)
+pubservices static-add myapp ~/projects/myapp/dist
 ```
 
-**Tip:** Point your build tool's output directory directly to `nginx/static/myapp` so you skip the copy step on every rebuild:
+Other static commands:
+
+```bash
+pubservices static-list            # show all static sites + size
+pubservices static-remove myapp    # delete from nginx/static/ (then: devproxy remove -h myapp.local)
+```
+
+Requires `rsync` (falls back to `cp` if unavailable). The `--delete` flag ensures removed files are cleaned up on each sync.
+
+**Tip:** Point your build tool's output directory directly to `nginx/static/myapp` to skip the sync step entirely:
 
 ```bash
 # Vite example
 vite build --outDir /path/to/public-services/nginx/static/myapp
 ```
 
-To remove: `devproxy remove -h myapp.local` and delete the folder from `nginx/static/`.
+To remove: `pubservices static-remove myapp` then `devproxy remove -h myapp.local`.
 
 ### Option B — Mount home directory at the same path
 
