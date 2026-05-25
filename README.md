@@ -171,15 +171,19 @@ pubservices info            # Show connection details
 pubservices up [service]    # Start services
 pubservices down            # Stop all services
 pubservices restart [svc]   # Restart services
-pubservices reload-proxy            # Reload Nginx config (nginx -s reload)
-pubservices logs [service]          # Follow logs
-pubservices edit                    # Edit .env in $EDITOR
+pubservices reload-proxy             # Reload Nginx config (nginx -s reload)
+pubservices logs [service]           # Follow logs
+pubservices edit                     # Edit .env in $EDITOR
+pubservices backup                   # Backup MySQL and Redis data
+pubservices restore <file>           # Restore from a backup archive
+pubservices build                    # Rebuild Docker images (no cache)
+pubservices run <cmd...>             # Run any command inside the installation directory
 pubservices static-add <name> [src]  # Sync build dir into nginx/static/ via rsync
 pubservices static-remove <name>     # Remove static site from nginx/static/
 pubservices static-list              # List static sites in nginx/static/
 pubservices static-mount [path]      # Create docker-compose.override.yml for home-dir mount (Option B)
 pubservices static-unmount           # Remove the override file
-pubservices reset                   # Delete all data (DESTRUCTIVE)
+pubservices reset                    # Delete all data (DESTRUCTIVE)
 ```
 
 ## Adding a New Site to Nginx

@@ -38,14 +38,18 @@ usage() {
     echo -e "    ${GREEN}reload-proxy${RESET}      Reload Nginx configuration (nginx -s reload)"
     echo -e "    ${GREEN}logs${RESET} [service]    Follow service logs (or one specific service)"
     echo -e "    ${GREEN}edit${RESET}              Edit .env in \$EDITOR"
-    echo -e "    ${GREEN}update${RESET}            Check for updates and install if available"
-    echo -e "    ${GREEN}static-add${RESET} <name> [src]   Sync a build directory into nginx/static/ (uses rsync)"
-    echo -e "    ${GREEN}static-remove${RESET} <name>      Remove a static site from nginx/static/"
-    echo -e "    ${GREEN}static-list${RESET}               List static sites in nginx/static/"
-    echo -e "    ${GREEN}static-mount${RESET} [path]       Create override file to mount path into nginx (Option B)"
-    echo -e "    ${GREEN}static-unmount${RESET}            Remove the override file"
-    echo -e "    ${GREEN}reset${RESET}                    Stop all services and delete data (DESTRUCTIVE)"
-    echo -e "    ${GREEN}help${RESET}                     Show this help message"
+    echo -e "    ${GREEN}update${RESET}                     Check for updates and install if available"
+    echo -e "    ${GREEN}backup${RESET}                     Backup MySQL and Redis data"
+    echo -e "    ${GREEN}restore${RESET} <file>             Restore from a backup archive"
+    echo -e "    ${GREEN}build${RESET}                      Rebuild Docker images (no cache)"
+    echo -e "    ${GREEN}run${RESET} <cmd...>               Run any command inside the installation directory"
+    echo -e "    ${GREEN}static-add${RESET} <name> [src]    Sync a build directory into nginx/static/ (uses rsync)"
+    echo -e "    ${GREEN}static-remove${RESET} <name>       Remove a static site from nginx/static/"
+    echo -e "    ${GREEN}static-list${RESET}                List static sites in nginx/static/"
+    echo -e "    ${GREEN}static-mount${RESET} [path]        Create override file to mount path into nginx (Option B)"
+    echo -e "    ${GREEN}static-unmount${RESET}             Remove the override file"
+    echo -e "    ${GREEN}reset${RESET}                      Stop all services and delete data (DESTRUCTIVE)"
+    echo -e "    ${GREEN}help${RESET}                       Show this help message"
     echo ""
     echo -e "  ${BOLD}Examples:${RESET}"
     echo -e "    pubservices up"
@@ -294,6 +298,48 @@ cmd_update() {
     sudo bash -c "AUTO_CONFIRM=1 bash <(curl -fsSL '${install_url}')"
 }
 
+cmd_backup() {
+    bash "${BASE_DIR}/scripts/backup.sh"
+}
+
+cmd_restore() {
+    local file="${1:-}"
+
+    if [[ -z "$file" ]]; then
+        read -r -p "  Backup file path: " file </dev/tty
+    fi
+    if [[ -z "$file" ]]; then
+        echo -e "${RED}✗ File path is required.${RESET}"
+        exit 1
+    fi
+
+    file="${file/#\~/$HOME}"
+
+    if [[ ! -f "$file" ]]; then
+        echo -e "${RED}✗ File not found: ${file}${RESET}"
+        exit 1
+    fi
+
+    bash "${BASE_DIR}/scripts/restore.sh" "$file"
+}
+
+cmd_build() {
+    local all_profiles=(--profile proxy --profile pma --profile mail --profile storage)
+    echo -e "${CYAN}›${RESET} Rebuilding Docker images (no cache)..."
+    docker compose "${all_profiles[@]}" build --no-cache
+}
+
+cmd_run() {
+    if [[ $# -eq 0 ]]; then
+        echo -e "${RED}✗ No command specified.${RESET}"
+        echo -e "  ${DIM}Usage: pubservices run <command> [args...]${RESET}"
+        echo -e "  ${DIM}Example: pubservices run make lint${RESET}"
+        exit 1
+    fi
+    # BASE_DIR is already the working directory (set at top of script)
+    "$@"
+}
+
 cmd_static_add() {
     local name="${1:-}"
     local src="${2:-}"
@@ -500,7 +546,11 @@ case "$COMMAND" in
     reload-proxy)  cmd_reload ;;
     logs)    cmd_logs "$@" ;;
     edit)    cmd_edit ;;
-    update)  cmd_update ;;
+    update)   cmd_update ;;
+    backup)   cmd_backup ;;
+    restore)  cmd_restore "$@" ;;
+    build)    cmd_build ;;
+    run)      cmd_run "$@" ;;
     static-add)     cmd_static_add "$@" ;;
     static-remove)  cmd_static_remove "$@" ;;
     static-list)    cmd_static_list ;;
