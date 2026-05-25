@@ -9,6 +9,9 @@ data/minio/*
 # Environment variables
 .env
 
+# Local Docker Compose overrides (e.g. home-dir mount for static sites)
+docker-compose.override.yml
+
 # phpMyAdmin
 phpmyadmin/custom-themes/**/*
 

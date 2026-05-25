@@ -174,9 +174,11 @@ pubservices restart [svc]   # Restart services
 pubservices reload-proxy            # Reload Nginx config (nginx -s reload)
 pubservices logs [service]          # Follow logs
 pubservices edit                    # Edit .env in $EDITOR
-pubservices static-add <name> [src] # Sync build dir into nginx/static/ via rsync
-pubservices static-remove <name>    # Remove static site from nginx/static/
-pubservices static-list             # List static sites in nginx/static/
+pubservices static-add <name> [src]  # Sync build dir into nginx/static/ via rsync
+pubservices static-remove <name>     # Remove static site from nginx/static/
+pubservices static-list              # List static sites in nginx/static/
+pubservices static-mount [path]      # Create docker-compose.override.yml for home-dir mount (Option B)
+pubservices static-unmount           # Remove the override file
 pubservices reset                   # Delete all data (DESTRUCTIVE)
 ```
 
@@ -244,23 +246,26 @@ To remove: `pubservices static-remove myapp` then `devproxy remove -h myapp.loca
 
 ### Option B — Mount home directory at the same path
 
-Create a `docker-compose.override.yml` in the project root (git-ignored, merged automatically):
-
-```yaml
-# docker-compose.override.yml
-services:
-  nginx:
-    volumes:
-      - "${HOME}:${HOME}:ro"
-```
-
-Restart nginx (`make up-proxy`), then register using the real host path:
+Use the built-in command to generate and manage the override file automatically:
 
 ```bash
+# Create docker-compose.override.yml (mounts $HOME by default)
+pubservices static-mount
+
+# Or mount a specific directory instead of the whole home
+pubservices static-mount ~/projects
+
+# Restart nginx to apply the mount
+make up-proxy
+
+# Register using the real host path (no copying needed)
 devproxy create -h myapp.local --static --root /home/youruser/projects/myapp/dist
+
+# To undo
+pubservices static-unmount && make up-proxy
 ```
 
-No copying needed — nginx reads files directly from the host path. Trade-off: mounts the entire home directory read-only into the container.
+`docker-compose.override.yml` is git-ignored and merged automatically by Docker Compose on every `up`. No copying needed — nginx reads files directly from the host path. Trade-off: mounts the chosen directory read-only into the container.
 
 ### Option C — Wrap the static site in a Docker container
 
