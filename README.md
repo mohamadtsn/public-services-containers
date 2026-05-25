@@ -201,6 +201,86 @@ pubservices reload-proxy
 # or: docker exec nginx-main nginx -s reload
 ```
 
+## Serving Static Sites (React, Vue, plain HTML)
+
+For apps with a backend (Laravel, Node, etc.), nginx proxies traffic to a running port — no special setup needed. Static sites are different: nginx must read the files directly, so the path must exist **inside** the `nginx-main` container.
+
+`nginx/static/` is permanently mounted into the container at `/srv/static/` (read-only). Three approaches are available:
+
+### Option A — Copy build output to `nginx/static/` (recommended)
+
+```bash
+# Build your project
+cd ~/projects/myapp && npm run build   # generates dist/
+
+# Copy the build into nginx/static/
+cp -r dist/ /path/to/public-services/nginx/static/myapp
+
+# Register with local-dev-proxy (path is the container-internal path)
+devproxy create -h myapp.local --static --root /srv/static/myapp
+
+# Reload nginx
+pubservices reload-proxy
+```
+
+**Tip:** Point your build tool's output directory directly to `nginx/static/myapp` so you skip the copy step on every rebuild:
+
+```bash
+# Vite example
+vite build --outDir /path/to/public-services/nginx/static/myapp
+```
+
+To remove: `devproxy remove -h myapp.local` and delete the folder from `nginx/static/`.
+
+### Option B — Mount home directory at the same path
+
+Create a `docker-compose.override.yml` in the project root (git-ignored, merged automatically):
+
+```yaml
+# docker-compose.override.yml
+services:
+  nginx:
+    volumes:
+      - "${HOME}:${HOME}:ro"
+```
+
+Restart nginx (`make up-proxy`), then register using the real host path:
+
+```bash
+devproxy create -h myapp.local --static --root /home/youruser/projects/myapp/dist
+```
+
+No copying needed — nginx reads files directly from the host path. Trade-off: mounts the entire home directory read-only into the container.
+
+### Option C — Wrap the static site in a Docker container
+
+Add a `docker-compose.yml` to the static project connecting to `public-service-network`, then use a regular proxy config:
+
+```yaml
+# Inside the static project
+services:
+  myapp:
+    image: nginx:alpine
+    container_name: myapp-static
+    volumes:
+      - ./dist:/usr/share/nginx/html:ro
+    ports:
+      - "18100:80"
+    networks:
+      - public-service-network
+
+networks:
+  public-service-network:
+    external: true
+    name: public-service-network
+```
+    
+```bash
+devproxy create -h myapp.local -p 18100
+```
+
+Fully consistent with the Docker-first ecosystem; no path issues.
+
 ## Connecting a Project to This Stack
 
 Add to your project's `docker-compose.yml`:
@@ -277,8 +357,9 @@ This package works together with [local-dev-proxy](https://github.com/mohamadtsn
 │   ├── certificates/           # SSL certs (git-ignored)
 │   ├── settings/
 │   │   └── nginx.conf
-│   └── site-enabled/           # Virtual host configs
-│       └── default.conf
+│   ├── site-enabled/           # Virtual host configs
+│   │   └── default.conf
+│   └── static/                 # Static site build output (git-ignored content, mounted as /srv/static)
 ├── scripts/
 │   ├── backup.sh
 │   ├── install.sh

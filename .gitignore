@@ -12,6 +12,10 @@ data/minio/*
 # phpMyAdmin
 phpmyadmin/custom-themes/**/*
 
+# Static sites build output (keep directory, ignore content)
+nginx/static/*
+!nginx/static/.gitkeep
+
 # SSL certificates (keep the directory, not the certs)
 nginx/certificates/*.crt
 nginx/certificates/*.key

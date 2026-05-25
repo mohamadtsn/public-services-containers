@@ -59,6 +59,7 @@ services:
     volumes:
       - './nginx/site-enabled/:/etc/nginx/conf.d/'
       - './nginx/certificates/:/etc/nginx/ssl/:ro'
+      - './nginx/static/:/srv/static/:ro'
     networks:
       - public-service-network
     healthcheck:
