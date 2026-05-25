@@ -490,7 +490,7 @@ EOF
     echo -e "  ${DIM}Mounted: ${mount_path} → ${mount_path} (read-only)${RESET}"
     echo ""
     echo -e "  ${BOLD}Next steps:${RESET}"
-    echo -e "  1. Restart nginx:  ${CYAN}make up-proxy${RESET}"
+    echo -e "  1. Restart nginx:  ${CYAN}pubservices run make up-proxy${RESET}"
     echo -e "  2. Register site:  ${CYAN}devproxy create -h myapp.local --static --root /path/to/dist${RESET}"
     echo ""
     echo -e "  ${DIM}To undo: pubservices static-unmount${RESET}"
