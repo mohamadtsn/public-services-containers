@@ -6,7 +6,7 @@ _pubservices() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    commands="status info up down restart reload-proxy logs edit update reset help"
+    commands="status info up down restart reload-proxy logs edit update backup restore build run static-add static-remove static-list static-mount static-unmount reset help"
     services="mysql redis nginx phpmyadmin mailpit minio"
 
     if [[ $COMP_CWORD -eq 1 ]]; then
