@@ -238,9 +238,13 @@ if [[ -d "$FISH_COMPLETION_DIR" ]]; then
     echo "Installed fish completion → ${FISH_COMPLETION_DIR}/pubservices.fish"
 fi
 
-# Create data directories (never overwrite user data)
-mkdir -p "$INSTALL_DIR/data/mysql"
-mkdir -p "$INSTALL_DIR/data/redis"
+# Create data directories (first install only — never on update)
+# On update, containers have already written files under data/ with their own
+# UIDs (e.g. MySQL uses uid 999). Any chown on data/ breaks service startup.
+if [[ "$IS_UPDATE" != "true" ]]; then
+    mkdir -p "$INSTALL_DIR/data/mysql"
+    mkdir -p "$INSTALL_DIR/data/redis"
+fi
 mkdir -p "$INSTALL_DIR/nginx/certificates"
 
 # Setup .env from .env.example if not present
@@ -250,12 +254,22 @@ if [[ ! -f "$INSTALL_DIR/.env" ]] && [[ -f "${BASE_DIR}/.env.example" ]]; then
     echo -e "${COLOR_YELLOW}  → Please review and update ${INSTALL_DIR}/.env${COLOR_RESET}"
 fi
 
-chown -R root:root "$INSTALL_DIR"
+# On update: chown every top-level entry EXCEPT data/ to avoid corrupting
+# container-managed file ownership (MySQL is very sensitive to this).
+# On first install: chown everything — data/ is still empty at this point.
+chown root:root "$INSTALL_DIR"
 chmod 755 "$INSTALL_DIR"
+if [[ "$IS_UPDATE" == "true" ]]; then
+    find "$INSTALL_DIR" -mindepth 1 -maxdepth 1 ! -name 'data' -exec chown -R root:root {} \;
+else
+    chown -R root:root "$INSTALL_DIR"
+fi
 
-# Give the real user ownership of directories they need to write to
+# Give the real user ownership of directories they need to write to (never data/)
 if [[ -n "$REAL_USER" ]]; then
-    chown -R "${REAL_USER}:${REAL_GROUP}" "${INSTALL_DIR}/data"
+    if [[ "$IS_UPDATE" != "true" ]]; then
+        chown -R "${REAL_USER}:${REAL_GROUP}" "${INSTALL_DIR}/data"
+    fi
     chown -R "${REAL_USER}:${REAL_GROUP}" "${INSTALL_DIR}/nginx/site-enabled"
     chown -R "${REAL_USER}:${REAL_GROUP}" "${INSTALL_DIR}/nginx/certificates"
     [[ -f "${INSTALL_DIR}/.env" ]] && chown "${REAL_USER}:${REAL_GROUP}" "${INSTALL_DIR}/.env"

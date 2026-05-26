@@ -17,7 +17,7 @@ _pubservices() {
 
     if [[ $COMP_CWORD -eq 2 ]]; then
         case "$prev" in
-            up|restart|logs)
+            up|down|restart|logs)
                 # shellcheck disable=SC2207
                 COMPREPLY=( $(compgen -W "$services" -- "$cur") )
                 return 0

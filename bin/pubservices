@@ -33,7 +33,7 @@ usage() {
     echo -e "    ${GREEN}status${RESET}            Show status of all services (health + ports)"
     echo -e "    ${GREEN}info${RESET}              Show connection info for all services"
     echo -e "    ${GREEN}up${RESET} [service]      Start all services (or one specific service)"
-    echo -e "    ${GREEN}down${RESET}              Stop all services"
+    echo -e "    ${GREEN}down${RESET} [service]    Stop all services (or one specific service)"
     echo -e "    ${GREEN}restart${RESET} [service] Restart services (or one specific service)"
     echo -e "    ${GREEN}reload-proxy${RESET}      Reload Nginx configuration (nginx -s reload)"
     echo -e "    ${GREEN}logs${RESET} [service]    Follow service logs (or one specific service)"
@@ -199,7 +199,27 @@ cmd_up() {
 }
 
 cmd_down() {
-    docker compose "${COMPOSE_PROFILES[@]}" down
+    local service="${1:-}"
+
+    if [[ -n "$service" ]]; then
+        echo -e "${YELLOW}⚠  About to stop service: ${BOLD}${service}${RESET}"
+        read -r -p "  Confirm? [y/N]: " confirm </dev/tty
+        confirm="${confirm:-n}"
+        if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+            echo -e "  ${YELLOW}Cancelled.${RESET}"
+            exit 0
+        fi
+        docker compose stop "$service"
+    else
+        echo -e "${YELLOW}⚠  About to stop ${BOLD}all services${RESET}."
+        read -r -p "  Confirm stopping all services? [y/N]: " confirm </dev/tty
+        confirm="${confirm:-n}"
+        if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+            echo -e "  ${YELLOW}Cancelled.${RESET}"
+            exit 0
+        fi
+        docker compose "${COMPOSE_PROFILES[@]}" down
+    fi
 }
 
 cmd_restart() {
@@ -541,7 +561,7 @@ case "$COMMAND" in
     status)  cmd_status ;;
     info)    cmd_info ;;
     up)      cmd_up "$@" ;;
-    down)    cmd_down ;;
+    down)    cmd_down "$@" ;;
     restart) cmd_restart "$@" ;;
     reload-proxy)  cmd_reload ;;
     logs)    cmd_logs "$@" ;;
