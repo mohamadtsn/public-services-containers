@@ -179,6 +179,7 @@ pubservices restore <file>           # Restore from a backup archive
 pubservices build                    # Rebuild Docker images (no cache)
 pubservices run <cmd...>             # Run any command inside the installation directory
 pubservices static-add <name> [src]  # Sync build dir into nginx/static/ via rsync
+pubservices static-update [name]     # Re-sync from saved source (all sites if omitted)
 pubservices static-remove <name>     # Remove static site from nginx/static/
 pubservices static-list              # List static sites in nginx/static/
 pubservices static-mount [path]      # Create docker-compose.override.yml for home-dir mount (Option B)
@@ -226,8 +227,9 @@ cd ~/projects/myapp && npm run build
 pubservices static-add myapp ~/projects/myapp/dist
 devproxy create -h myapp.local --static --root /srv/static/myapp
 
-# After each rebuild: just sync again (rsync only transfers changed files)
-pubservices static-add myapp ~/projects/myapp/dist
+# After each rebuild: re-sync from the saved source
+pubservices static-update myapp
+pubservices static-update            # or update every static site at once
 ```
 
 Other static commands:

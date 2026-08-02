@@ -2,7 +2,7 @@
 
 set -l services mysql redis nginx phpmyadmin mailpit minio
 set -l commands_with_service up restart logs
-set -l commands_no_service status info down reload-proxy edit update backup restore build run static-add static-remove static-list static-mount static-unmount reset help
+set -l commands_no_service status info down reload-proxy edit update backup restore build run static-add static-update static-remove static-list static-mount static-unmount reset help
 
 # Disable file completion
 complete -c pubservices -f
@@ -36,6 +36,8 @@ complete -c pubservices -n "not __fish_seen_subcommand_from $commands_with_servi
     -a run          -d "Run any command inside the pubservices environment"
 complete -c pubservices -n "not __fish_seen_subcommand_from $commands_with_service $commands_no_service" \
     -a static-add   -d "Sync a build directory into nginx/static/"
+complete -c pubservices -n "not __fish_seen_subcommand_from $commands_with_service $commands_no_service" \
+    -a static-update -d "Re-sync a static site from its saved source"
 complete -c pubservices -n "not __fish_seen_subcommand_from $commands_with_service $commands_no_service" \
     -a static-remove -d "Remove a static site from nginx/static/"
 complete -c pubservices -n "not __fish_seen_subcommand_from $commands_with_service $commands_no_service" \

@@ -19,6 +19,7 @@ _pubservices() {
         'build:Rebuild Docker images (no cache)'
         'run:Run any command inside the pubservices environment'
         'static-add:Sync a build directory into nginx/static/'
+        'static-update:Re-sync a static site from its saved source'
         'static-remove:Remove a static site from nginx/static/'
         'static-list:List static sites in nginx/static/'
         'static-mount:Create docker-compose.override.yml to mount a host path'

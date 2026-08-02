@@ -44,6 +44,7 @@ usage() {
     echo -e "    ${GREEN}build${RESET}                      Rebuild Docker images (no cache)"
     echo -e "    ${GREEN}run${RESET} <cmd...>               Run any command inside the installation directory"
     echo -e "    ${GREEN}static-add${RESET} <name> [src]    Sync a build directory into nginx/static/ (uses rsync)"
+    echo -e "    ${GREEN}static-update${RESET} [name]       Re-sync a static site from its saved source (all if omitted)"
     echo -e "    ${GREEN}static-remove${RESET} <name>       Remove a static site from nginx/static/"
     echo -e "    ${GREEN}static-list${RESET}                List static sites in nginx/static/"
     echo -e "    ${GREEN}static-mount${RESET} [path]        Create override file to mount path into nginx (Option B)"
@@ -360,6 +361,26 @@ cmd_run() {
     "$@"
 }
 
+# Sync src -> nginx/static/<name> and remember src for static-update
+static_sync() {
+    local name="$1" src="$2"
+    local dest="${BASE_DIR}/nginx/static/${name}"
+    mkdir -p "$dest" "${BASE_DIR}/nginx/static/.sources"
+
+    echo -e "${CYAN}›${RESET} Syncing into nginx/static/${name}..."
+
+    if command -v rsync &>/dev/null; then
+        rsync -a --delete --info=progress2 "${src%/}/" "${dest}/"
+    else
+        echo -e "${YELLOW}⚠  rsync not found — falling back to cp${RESET}"
+        rm -rf "${dest:?}"
+        mkdir -p "$dest"
+        cp -r "${src%/}/." "$dest/"
+    fi
+
+    printf '%s\n' "${src%/}" > "${BASE_DIR}/nginx/static/.sources/${name}"
+}
+
 cmd_static_add() {
     local name="${1:-}"
     local src="${2:-}"
@@ -388,19 +409,7 @@ cmd_static_add() {
         exit 1
     fi
 
-    local dest="${BASE_DIR}/nginx/static/${name}"
-    mkdir -p "$dest"
-
-    echo -e "${CYAN}›${RESET} Syncing into nginx/static/${name}..."
-
-    if command -v rsync &>/dev/null; then
-        rsync -a --delete --info=progress2 "${src%/}/" "${dest}/"
-    else
-        echo -e "${YELLOW}⚠  rsync not found — falling back to cp${RESET}"
-        rm -rf "${dest:?}"
-        mkdir -p "$dest"
-        cp -r "${src%/}/." "$dest/"
-    fi
+    static_sync "$name" "$src"
 
     echo ""
     echo -e "  ${GREEN}✓ Synced to nginx/static/${name}${RESET}"
@@ -408,7 +417,48 @@ cmd_static_add() {
     echo ""
     echo -e "  To register with devproxy (first time):"
     echo -e "  ${CYAN}devproxy create -h myapp.local --static --root /srv/static/${name}${RESET}"
-    echo -e "  ${DIM}For subsequent syncs just run this command again — no devproxy step needed.${RESET}"
+    echo -e "  ${DIM}For subsequent syncs run 'pubservices static-update ${name}' — no devproxy step needed.${RESET}"
+    echo ""
+}
+
+cmd_static_update() {
+    local name="${1:-}"
+    local src_dir="${BASE_DIR}/nginx/static/.sources"
+
+    # No name → update every site that has a saved source
+    if [[ -z "$name" ]]; then
+        local found=0
+        for f in "${src_dir}"/*; do
+            [[ -f "$f" ]] || continue
+            cmd_static_update "$(basename "$f")"
+            found=1
+        done
+        if [[ "$found" -eq 0 ]]; then
+            echo -e "${YELLOW}⚠  No static sites with a saved source.${RESET}"
+            echo -e "${DIM}  Use: pubservices static-add <name> <source-dir>${RESET}"
+        fi
+        return
+    fi
+
+    if [[ ! -d "${BASE_DIR}/nginx/static/${name}" ]]; then
+        echo -e "${RED}✗ Static project not found: ${name}${RESET}"
+        exit 1
+    fi
+
+    local src
+    src=$(cat "${src_dir}/${name}" 2>/dev/null || true)
+    if [[ -z "$src" ]]; then
+        echo -e "${RED}✗ No saved source for ${name}.${RESET}"
+        echo -e "${DIM}  Use: pubservices static-add ${name} <source-dir>${RESET}"
+        exit 1
+    fi
+    if [[ ! -d "$src" ]]; then
+        echo -e "${RED}✗ Source directory no longer exists: ${src}${RESET}"
+        exit 1
+    fi
+
+    static_sync "$name" "$src"
+    echo -e "  ${GREEN}✓ Updated nginx/static/${name}${RESET} ${DIM}← ${src}${RESET}"
     echo ""
 }
 
@@ -439,6 +489,7 @@ cmd_static_remove() {
     fi
 
     rm -rf "${dest:?}"
+    rm -f "${BASE_DIR}/nginx/static/.sources/${name}"
     echo -e "${GREEN}✓ Removed nginx/static/${name}${RESET}"
     echo -e "${DIM}  Run 'devproxy remove -h DOMAIN' to clean up the nginx config too.${RESET}"
     echo ""
@@ -460,6 +511,9 @@ cmd_static_list() {
         files=$(find "$dir" -type f 2>/dev/null | wc -l | tr -d ' ')
         echo -e "  ${GREEN}●${RESET} ${BOLD}${name}${RESET}  ${DIM}${files} files, ${size}${RESET}"
         echo -e "    ${DIM}/srv/static/${name}${RESET}"
+        local src
+        src=$(cat "${static_dir}/.sources/${name}" 2>/dev/null || true)
+        [[ -n "$src" ]] && echo -e "    ${DIM}source: ${src}${RESET}"
         found=1
     done
 
@@ -572,6 +626,7 @@ case "$COMMAND" in
     build)    cmd_build ;;
     run)      cmd_run "$@" ;;
     static-add)     cmd_static_add "$@" ;;
+    static-update)  cmd_static_update "$@" ;;
     static-remove)  cmd_static_remove "$@" ;;
     static-list)    cmd_static_list ;;
     static-mount)   cmd_static_mount "$@" ;;
