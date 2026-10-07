@@ -10,8 +10,8 @@ on:
   workflow_call:
 
 jobs:
-  validate:
-    name: Validate Configuration
+  stack:
+    name: Stack templates
     runs-on: ubuntu-latest
 
     steps:
@@ -19,18 +19,70 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Validate docker-compose syntax
+        working-directory: templates
         run: |
           cp .env.example .env
           docker compose config > /dev/null
           echo "✓ docker-compose syntax is valid"
 
-      - name: Run shellcheck on scripts
+      - name: Shellcheck the release script
         run: |
-          if command -v shellcheck >/dev/null 2>&1; then
-            shellcheck scripts/*.sh bin/pubservices completion/pubservices.bash
-            echo "✓ shellcheck passed"
-          else
-            sudo apt-get install -y shellcheck
-            shellcheck scripts/*.sh bin/pubservices completion/pubservices.bash
-            echo "✓ shellcheck passed"
-          fi
+          command -v shellcheck >/dev/null 2>&1 || sudo apt-get install -y shellcheck
+          shellcheck scripts/release.sh
+          echo "✓ shellcheck passed"
+
+  cli:
+    name: CLI (typecheck · test · build)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Smoke test the built binary
+        run: |
+          export PUBSERVICES_HOME="$RUNNER_TEMP/pubservices"
+          node dist/cli.js --version
+          node dist/cli.js status
+          node dist/cli.js completion show bash > /tmp/c.bash && bash -n /tmp/c.bash
+          test -f "$PUBSERVICES_HOME/.env"
+          test -f "$PUBSERVICES_HOME/docker-compose.yml"
+          echo "✓ CLI bootstraps its home directory"
+
+      - name: Verify the published package contents
+        run: |
+          npm pack --dry-run --json > /tmp/pack.json
+          node -e "
+            const raw = require('/tmp/pack.json');
+            // npm 12 returns an object keyed by package name; older npm an array.
+            const entry = Array.isArray(raw) ? raw[0] : Object.values(raw)[0];
+            const files = (entry.files ?? []).map(f => f.path ?? f);
+            const required = [
+              'dist/cli.js',
+              'templates/docker-compose.yml',
+              'templates/.env.example',
+              'templates/nginx/Dockerfile',
+              'templates/mysql/conf.d/custom.cnf',
+            ];
+            const missing = required.filter(f => !files.includes(f));
+            if (missing.length) { console.error('missing from package:', missing); process.exit(1); }
+            console.log('✓ package contains dist and templates');
+          "

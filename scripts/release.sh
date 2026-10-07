@@ -56,7 +56,7 @@ for arg in "$@"; do
             echo -e "  ${COLOR_BOLD}Options:${COLOR_RESET}"
             echo -e "    ${COLOR_CYAN}--dry-run${COLOR_RESET}  Show what would happen, make no changes"
             echo -e "    ${COLOR_CYAN}--no-push${COLOR_RESET}  Commit and tag locally, do not push"
-            echo -e "    ${COLOR_CYAN}--no-lint${COLOR_RESET}  Skip shellcheck before releasing"
+            echo -e "    ${COLOR_CYAN}--no-lint${COLOR_RESET}  Skip typecheck, tests and shellcheck"
             echo ""
             exit 0
             ;;
@@ -95,20 +95,32 @@ bump_version() {
     local current="$1"
     local bump="$2"
 
-    if [[ ! "$current" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    # Pre-release versions (2.0.0-alpha.3) are accepted as the *current* version.
+    # Bumping drops the suffix, so 2.0.0-alpha.3 --patch--> 2.0.0: the release a
+    # pre-release was leading up to, not 2.0.1.
+    if [[ ! "$current" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
         fail "VERSION file contains invalid semver: '$current'"
     fi
 
+    local prerelease="${BASH_REMATCH[1]:-}"
+    local core="${current%%-*}"
+
     local major minor patch
-    IFS='.' read -r major minor patch <<< "$current"
+    IFS='.' read -r major minor patch <<< "$core"
 
     case "$bump" in
         major) echo "$((major + 1)).0.0" ;;
         minor) echo "${major}.$((minor + 1)).0" ;;
-        patch) echo "${major}.${minor}.$((patch + 1))" ;;
+        patch)
+            if [[ -n "$prerelease" ]]; then
+                echo "$core"
+            else
+                echo "${major}.${minor}.$((patch + 1))"
+            fi
+            ;;
         *)
-            if [[ ! "$bump" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-                fail "Invalid version format: '$bump' — expected x.y.z"
+            if [[ ! "$bump" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+                fail "Invalid version format: '$bump' — expected x.y.z or x.y.z-tag"
             fi
             echo "$bump"
             ;;
@@ -151,16 +163,21 @@ run_lint() {
         return
     fi
 
-    step "Running shellcheck..."
-    if ! command -v shellcheck &>/dev/null; then
-        warn "shellcheck not installed — skipping lint"
-        return
+    step "Type-checking and testing the CLI..."
+    if ! (cd "$BASE_DIR" && npm run typecheck && npm test); then
+        fail "Typecheck or tests failed. Fix them or use --no-lint to skip."
     fi
+    ok "Typecheck and tests passed"
 
-    if shellcheck "${BASE_DIR}/bin/pubservices" "${BASE_DIR}/scripts/"*.sh 2>&1; then
-        ok "Shellcheck passed"
+    if command -v shellcheck &>/dev/null; then
+        step "Running shellcheck..."
+        if shellcheck "${BASE_DIR}/scripts/"*.sh 2>&1; then
+            ok "Shellcheck passed"
+        else
+            fail "Shellcheck found issues. Fix them or use --no-lint to skip."
+        fi
     else
-        fail "Shellcheck found issues. Fix them or use --no-lint to skip."
+        warn "shellcheck not installed — skipping"
     fi
 }
 
@@ -196,8 +213,13 @@ main() {
     step "Updating VERSION file: ${current} → ${new_version}"
     run "echo '${new_version}' > '${VERSION_FILE}'"
 
+    # package.json is the version npm publishes and the release workflow checks
+    # against the tag, so the two files must never drift apart.
+    step "Updating package.json to ${new_version}..."
+    run "cd '${BASE_DIR}' && npm version '${new_version}' --no-git-tag-version --allow-same-version >/dev/null"
+
     step "Creating release commit..."
-    run "git -C '${BASE_DIR}' add '${VERSION_FILE}'"
+    run "git -C '${BASE_DIR}' add '${VERSION_FILE}' '${BASE_DIR}/package.json' '${BASE_DIR}/package-lock.json'"
     run "git -C '${BASE_DIR}' commit -m 'Release ${tag}'"
 
     step "Creating tag ${tag}..."

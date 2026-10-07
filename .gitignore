@@ -1,29 +1,8 @@
-# Local data volumes (do not commit)
-data/mysql/*
-data/redis/*
-data/minio/*
-!data/mysql/.gitkeep
-!data/redis/.gitkeep
-!data/minio/.gitkeep
-
-# Environment variables
+# Leftovers from the v1 layout, when the stack ran from the repo itself.
+# Runtime state now lives in $PUBSERVICES_HOME (~/.pubservices), never here.
+data/
 .env
-
-# Local Docker Compose overrides (e.g. home-dir mount for static sites)
 docker-compose.override.yml
-
-# phpMyAdmin
-phpmyadmin/custom-themes/**/*
-
-# Static sites build output (keep directory, ignore content)
-nginx/static/*
-!nginx/static/.gitkeep
-
-# SSL certificates (keep the directory, not the certs)
-nginx/certificates/*.crt
-nginx/certificates/*.key
-nginx/certificates/*.pem
-nginx/certificates/*.p12
 
 # IDE
 .idea/
@@ -33,3 +12,8 @@ nginx/certificates/*.p12
 # OS
 .DS_Store
 Thumbs.db
+
+# Node / npm CLI build artifacts
+node_modules/
+dist/
+*.tsbuildinfo
