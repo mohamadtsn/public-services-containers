@@ -99,6 +99,13 @@ export const say = {
   blank: () => console.log(''),
 };
 
+/** Clears the terminal screen and scrollback buffer on interactive terminals. */
+export function clearScreen(): void {
+  if (process.stdout.isTTY) {
+    process.stdout.write('\x1B[2J\x1B[3J\x1B[H');
+  }
+}
+
 /** Thrown for expected failures: printed as one clean line, no stack trace. */
 export class UserError extends Error {
   readonly hint: string | undefined;

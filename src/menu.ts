@@ -6,7 +6,7 @@ import { buildCommand, downCommand, logsCommand, restartCommand, upCommand } fro
 import { reloadProxyCommand } from './commands/reload.js';
 import { resetCommand } from './commands/reset.js';
 import { restoreCommand } from './commands/restore.js';
-import { editCommand } from './commands/shell.js';
+import { editCommand, editServiceConfig, execShellCommand } from './commands/shell.js';
 import {
   staticAdd,
   staticList,
@@ -17,9 +17,10 @@ import {
 } from './commands/static.js';
 import { statusCommand } from './commands/status.js';
 import type { Ctx } from './context.js';
+import { inspectMany } from './docker.js';
 import { services } from './env.js';
 import { packageVersion } from './home.js';
-import { UserError, color, say, tildify } from './ui.js';
+import { UserError, clearScreen, color, say, tildify } from './ui.js';
 
 interface Action {
   value: string;
@@ -42,6 +43,15 @@ interface Group {
   actions: Action[];
 }
 
+async function pausePrompt(): Promise<void> {
+  if (!process.stdin.isTTY) return;
+  say.blank();
+  await select({
+    message: 'Action completed',
+    options: [{ value: 'continue', label: '← Return to menu' }],
+  });
+}
+
 async function pickService(ctx: Ctx, message: string): Promise<string | null> {
   const choice = await select({
     message,
@@ -54,6 +64,137 @@ async function pickService(ctx: Ctx, message: string): Promise<string | null> {
   return isCancel(choice) ? null : (choice as string);
 }
 
+/** Interactive menu to manage an individual service (start, stop, restart, logs, build). */
+async function manageServiceMenu(ctx: Ctx): Promise<boolean | void> {
+  const allServices = services(ctx.env);
+
+  for (;;) {
+    clearScreen();
+    intro(`${color.brand(color.bold('pubservices'))} ${color.meta(`v${packageVersion()} · Manage a service`)}`);
+
+    const statuses = await inspectMany(allServices.map((s) => s.container));
+
+    const choice = await select({
+      message: 'Select a service to manage:',
+      options: [
+        ...allServices.map((s) => {
+          const st = statuses.get(s.container) ?? 'stopped';
+          return {
+            value: s.key,
+            label: s.label,
+            hint: `${st} · ${s.address}`,
+          };
+        }),
+        { value: 'back', label: '← Back to services', hint: '' },
+      ],
+    });
+
+    if (isCancel(choice) || choice === 'back') {
+      return;
+    }
+
+    const svc = allServices.find((s) => s.key === choice);
+    if (!svc) continue;
+
+    for (;;) {
+      clearScreen();
+      const svcStatuses = await inspectMany([svc.container]);
+      const currentSt = svcStatuses.get(svc.container) ?? 'stopped';
+      const isRunning = currentSt === 'healthy' || currentSt === 'running' || currentSt === 'starting';
+      const isDatabase = svc.key === 'mysql' || svc.key === 'postgres' || svc.key === 'redis';
+      const isNginx = svc.key === 'nginx';
+
+      intro(`${color.brand(color.bold(svc.label))} ${color.meta(`${svc.container} · ${svc.address} (${currentSt})`)}`);
+
+      interface OptionItem {
+        value: string;
+        label: string;
+        hint?: string;
+      }
+
+      const options: OptionItem[] = [];
+
+      if (!isRunning) {
+        options.push({ value: 'up', label: 'Start service', hint: `pubservices up ${svc.key}` });
+      } else {
+        options.push({ value: 'restart', label: 'Restart service', hint: `pubservices restart ${svc.key}` });
+        options.push({ value: 'down', label: 'Stop service', hint: `pubservices down ${svc.key}` });
+      }
+
+      if (isDatabase) {
+        options.push({
+          value: 'backup',
+          label: svc.key === 'redis' ? 'Backup data' : 'Backup database',
+          hint: isRunning ? `dump ${svc.label} into backups/` : 'service must be running',
+        });
+      }
+
+      if (isNginx && isRunning) {
+        options.push({ value: 'reload', label: 'Reload Nginx config', hint: 'pubservices reload-proxy' });
+      }
+
+      if (isRunning) {
+        options.push({ value: 'shell', label: 'Enter container shell', hint: 'open interactive bash/sh' });
+        options.push({ value: 'logs', label: 'Follow logs', hint: `pubservices logs ${svc.key}` });
+      }
+
+      options.push({ value: 'config', label: 'Edit configuration', hint: 'open config in $EDITOR' });
+      options.push({ value: 'build', label: 'Rebuild image', hint: `pubservices build ${svc.key}` });
+      options.push({ value: 'back', label: '← Back to service list', hint: '' });
+
+      const action = await select({
+        message: `Action for ${svc.label}:`,
+        options,
+      });
+
+      if (isCancel(action) || action === 'back') {
+        break;
+      }
+
+      clearScreen();
+      intro(`${color.brand(color.bold(svc.label))} ${color.meta(`Action: ${action}`)}`);
+
+      let skipPause = false;
+
+      try {
+        if (action === 'up') {
+          await upCommand(ctx, svc.key, {});
+        } else if (action === 'down') {
+          await downCommand(ctx, svc.key, {});
+        } else if (action === 'restart') {
+          await restartCommand(ctx, svc.key, {});
+        } else if (action === 'backup') {
+          await backupCommand(ctx, svc.key);
+        } else if (action === 'reload') {
+          await reloadProxyCommand(ctx);
+        } else if (action === 'shell') {
+          await execShellCommand(ctx, svc.key);
+          skipPause = true;
+        } else if (action === 'config') {
+          await editServiceConfig(ctx, svc.key);
+          skipPause = true;
+        } else if (action === 'logs') {
+          await logsCommand(ctx, svc.key, {});
+          return false;
+        } else if (action === 'build') {
+          await buildCommand(ctx, svc.key, {});
+        }
+      } catch (err) {
+        if (err instanceof UserError) {
+          say.fail(err.message);
+          if (err.hint) say.meta(`  ${err.hint}`);
+        } else {
+          throw err;
+        }
+      }
+
+      if (!skipPause) {
+        await pausePrompt();
+      }
+    }
+  }
+}
+
 export const MENU_GROUPS: Group[] = [
   {
     value: 'services',
@@ -63,6 +204,7 @@ export const MENU_GROUPS: Group[] = [
       { value: 'up', label: 'Start core', hint: 'MySQL + Redis', command: 'up', run: (c) => upCommand(c, undefined, {}) },
       { value: 'up-proxy', label: 'Start core + Nginx', command: 'up --proxy', run: (c) => upCommand(c, undefined, { proxy: true }) },
       { value: 'up-full', label: 'Start everything', command: 'up --full', run: (c) => upCommand(c, undefined, { full: true }) },
+      { value: 'single', label: 'Manage a service', hint: 'start · stop · restart · logs · rebuild', command: 'up', run: (c) => manageServiceMenu(c) },
       { value: 'restart', label: 'Restart all', command: 'restart', run: (c) => restartCommand(c, undefined, {}) },
       { value: 'down', label: 'Stop all', hint: 'data is preserved', command: 'down', run: (c) => downCommand(c, undefined, {}) },
       { value: 'reload', label: 'Reload Nginx config', command: 'reload-proxy', run: (c) => reloadProxyCommand(c) },
@@ -164,9 +306,14 @@ export async function runMenu(ctx: Ctx): Promise<void> {
     );
   }
 
-  intro(`${color.brand(color.bold('pubservices'))} ${color.meta(`v${packageVersion()} · ${tildify(ctx.home)}`)}`);
+  const renderHeader = () => {
+    clearScreen();
+    intro(`${color.brand(color.bold('pubservices'))} ${color.meta(`v${packageVersion()} · ${tildify(ctx.home)}`)}`);
+  };
 
   for (;;) {
+    renderHeader();
+
     const group = await select({
       message: 'What do you want to do?',
       options: [
@@ -183,36 +330,49 @@ export async function runMenu(ctx: Ctx): Promise<void> {
     const chosen = MENU_GROUPS.find((g) => g.value === group);
     if (!chosen) continue;
 
-    const action = await select({
-      message: chosen.label,
-      options: [
-        ...chosen.actions.map((a) => ({ value: a.value, label: a.label, hint: a.hint })),
-        { value: 'back', label: '← Back', hint: '' },
-      ],
-    });
+    for (;;) {
+      renderHeader();
 
-    if (isCancel(action)) {
-      cancel('Bye.');
-      return;
-    }
-    if (action === 'back') continue;
+      const action = await select({
+        message: chosen.label,
+        options: [
+          ...chosen.actions.map((a) => ({ value: a.value, label: a.label, hint: a.hint })),
+          { value: 'back', label: '← Back', hint: '' },
+        ],
+      });
 
-    const selected = chosen.actions.find((a) => a.value === action);
-    if (!selected) continue;
-
-    try {
-      const keepGoing = await selected.run(ctx);
-      if (keepGoing === false) {
-        outro('Done.');
+      if (isCancel(action)) {
+        cancel('Bye.');
         return;
       }
-    } catch (err) {
-      // One failed action must not end the session — show it and offer the menu again.
-      if (err instanceof UserError) {
-        say.fail(err.message);
-        if (err.hint) say.meta(`  ${err.hint}`);
-      } else {
-        throw err;
+      if (action === 'back') break;
+
+      const selected = chosen.actions.find((a) => a.value === action);
+      if (!selected) continue;
+
+      if (selected.value !== 'single') {
+        clearScreen();
+        intro(`${color.brand(color.bold(selected.label))} ${color.meta(selected.command)}`);
+      }
+
+      try {
+        const keepGoing = await selected.run(ctx);
+        if (keepGoing === false) {
+          outro('Done.');
+          return;
+        }
+      } catch (err) {
+        // One failed action must not end the session — show it and offer the menu again.
+        if (err instanceof UserError) {
+          say.fail(err.message);
+          if (err.hint) say.meta(`  ${err.hint}`);
+        } else {
+          throw err;
+        }
+      }
+
+      if (selected.value !== 'single' && selected.value !== 'dash') {
+        await pausePrompt();
       }
     }
   }

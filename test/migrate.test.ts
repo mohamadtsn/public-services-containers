@@ -73,6 +73,20 @@ describe('migrate from a simulated v1 installation', () => {
     expect(existsSync(join(home, 'backups/backup_20260101_000000.tar.gz'))).toBe(true);
   });
 
+  it('copies root-owned unreadable certificates through container without host root', async () => {
+    if (!dockerOk) return;
+    await inContainer(
+      [{ host: join(legacy, 'nginx', 'certificates'), at: '/certs' }],
+      'echo "SECRET KEY" > /certs/root.key && chmod 600 /certs/root.key && chown 0:0 /certs/root.key',
+    );
+
+    await migrateCommand(ctx, { from: legacy, configOnly: true });
+
+    const copiedKey = join(home, 'nginx/certificates/root.key');
+    expect(existsSync(copiedKey)).toBe(true);
+    expect(readFileSync(copiedKey, 'utf8')).toContain('SECRET KEY');
+  });
+
   it('leaves the source installation completely untouched', async () => {
     const before = readdirSync(legacy, { recursive: true }).map(String).sort();
 

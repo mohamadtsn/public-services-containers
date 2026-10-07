@@ -92,7 +92,48 @@ export async function migrateCommand(ctx: Ctx, opts: MigrateOptions = {}): Promi
     if (!existsSync(source)) continue;
     const target = join(ctx.home, entry);
     mkdirSync(join(target, '..'), { recursive: true });
-    cpSync(source, target, { recursive: true, force: true });
+    try {
+      cpSync(source, target, { recursive: true, force: true });
+    } catch (err: unknown) {
+      const code = (err as { code?: string })?.code;
+      if (code === 'EACCES' || code === 'EPERM') {
+        // Source contains files unreadable directly by host user (e.g. root-owned 600 cert keys).
+        // Copy through a container and chown the copy to the host user.
+        const uid = process.getuid ? process.getuid() : 1000;
+        const gid = process.getgid ? process.getgid() : 1000;
+        const isDir = statSync(source).isDirectory();
+        if (isDir) {
+          mkdirSync(target, { recursive: true });
+          const res = await inContainer(
+            [
+              { host: source, at: '/from', readonly: true },
+              { host: target, at: '/to' },
+            ],
+            `cp -a /from/. /to/ && chown -R ${uid}:${gid} /to && chmod -R u+rwX /to`,
+          );
+          if (res.code !== 0) {
+            throw new UserError(`Could not copy ${entry}.`, (res.stderr || res.stdout).trim());
+          }
+        } else {
+          const parentTarget = join(target, '..');
+          const parentSource = join(source, '..');
+          const fileName = entry.split('/').pop()!;
+          mkdirSync(parentTarget, { recursive: true });
+          const res = await inContainer(
+            [
+              { host: parentSource, at: '/from', readonly: true },
+              { host: parentTarget, at: '/to' },
+            ],
+            `cp -a "/from/${fileName}" "/to/${fileName}" && chown ${uid}:${gid} "/to/${fileName}" && chmod u+rw "/to/${fileName}"`,
+          );
+          if (res.code !== 0) {
+            throw new UserError(`Could not copy ${entry}.`, (res.stderr || res.stdout).trim());
+          }
+        }
+      } else {
+        throw err;
+      }
+    }
     copied.push({ entry, from: source, to: target });
     say.ok(`copied ${entry}`);
   }
@@ -141,6 +182,22 @@ export async function migrateCommand(ctx: Ctx, opts: MigrateOptions = {}): Promi
   say.meta('  local-dev-proxy reads the nginx paths from the container mounts,');
   say.meta('  so it follows the new location automatically once nginx restarts.');
   say.blank();
+
+  try {
+    if (existsSync('/usr/local/bin/pubservices')) {
+      const { readlinkSync } = await import('node:fs');
+      const target = readlinkSync('/usr/local/bin/pubservices');
+      if (target.includes('public-services-containers')) {
+        say.warn('Legacy symlink detected at /usr/local/bin/pubservices (points to v1):');
+        say.meta('  Remove it so your shell uses the new v2 package:');
+        console.log(`    ${color.meta('sudo rm /usr/local/bin/pubservices && hash -r')}`);
+        say.blank();
+      }
+    }
+  } catch {
+    // Non-fatal check
+  }
+
   say.meta('  The old installation is untouched. Remove it yourself when you are happy:');
   console.log(`    ${color.meta(`sudo rm -rf ${from}`)}`);
   say.blank();

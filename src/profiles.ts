@@ -1,4 +1,4 @@
-import { ALL_PROFILES } from './env.js';
+import { ALL_PROFILES, type Env, services } from './env.js';
 import { UserError } from './ui.js';
 
 export interface ProfileFlags {
@@ -27,6 +27,12 @@ const FLAG_TO_PROFILE: Array<[keyof ProfileFlags, string]> = [
 export function profilesForUp(flags: ProfileFlags): string[] {
   if (flags.full) return [...ALL_PROFILES];
   return FLAG_TO_PROFILE.filter(([flag]) => flags[flag] === true).map(([, profile]) => profile);
+}
+
+/** Resolves the compose profile for a single named service. */
+export function profileForService(service: string, env: Env): string[] {
+  const svc = services(env).find((s) => s.key === service);
+  return svc?.profile ? [svc.profile] : [];
 }
 
 /**

@@ -17,7 +17,7 @@ import { type MigrateOptions, migrateCommand } from './commands/migrate.js';
 import { reloadProxyCommand } from './commands/reload.js';
 import { type ResetOptions, resetCommand } from './commands/reset.js';
 import { restoreCommand } from './commands/restore.js';
-import { editCommand, runCommand } from './commands/shell.js';
+import { editCommand, editServiceConfig, execShellCommand, runCommand } from './commands/shell.js';
 import { updateCommand } from './commands/update.js';
 import {
   type StaticAddOptions,
@@ -156,8 +156,22 @@ program
 
 program
   .command('edit')
-  .description('open .env in $EDITOR')
-  .action(async () => editCommand(context(globals())));
+  .argument('[service]', 'service key or omit for .env')
+  .description('open configuration in $EDITOR')
+  .action(async (service: string | undefined) => {
+    const ctx = context(globals());
+    if (service) return editServiceConfig(ctx, service);
+    return editCommand(ctx);
+  });
+
+program
+  .command('exec')
+  .alias('shell')
+  .argument('<service>', 'service key (e.g. mysql, nginx, postgres)')
+  .description('open an interactive shell in a container')
+  .action(async (service: string) => {
+    await execShellCommand(context(globals()), service);
+  });
 
 program
   .command('run')
@@ -167,8 +181,9 @@ program
 
 program
   .command('backup')
-  .description('dump MySQL and copy Redis data into backups/')
-  .action(async () => backupCommand(context(globals())));
+  .argument('[service]', 'mysql, postgres, redis (or omit for all)')
+  .description('dump database data into backups/')
+  .action(async (service: string | undefined) => backupCommand(context(globals()), service));
 
 program
   .command('backups')

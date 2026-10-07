@@ -27,91 +27,113 @@ async function isRunning(container: string): Promise<boolean> {
   return state !== undefined && state !== 'missing' && state !== 'stopped';
 }
 
-export async function backupCommand(ctx: Ctx): Promise<void> {
+export async function backupCommand(ctx: Ctx, service?: string): Promise<void> {
   const mysql = ctx.env.MYSQL_CONTAINER_NAME;
   const redis = ctx.env.REDIS_CONTAINER_NAME;
   const postgres = ctx.env.POSTGRES_CONTAINER_NAME;
 
+  if (service && service !== 'mysql' && service !== 'postgres' && service !== 'redis') {
+    throw new UserError(
+      `'${service}' is not a database service with backup support.`,
+      'Supported database services: mysql, postgres, redis',
+    );
+  }
+
+  const dumpMysql = !service || service === 'mysql';
+  const dumpRedis = !service || service === 'redis';
+  const dumpPostgres = !service || service === 'postgres';
+
   const dir = join(ctx.home, 'backups');
   mkdirSync(dir, { recursive: true });
-  const archive = join(dir, `backup_${timestamp()}.tar.gz`);
+  const archive = join(
+    dir,
+    service ? `backup_${service}_${timestamp()}.tar.gz` : `backup_${timestamp()}.tar.gz`,
+  );
 
   const staging = mkdtempSync(join(tmpdir(), 'pubservices-backup-'));
   const contents = { mysql: false, redis: false, postgres: false };
 
   try {
-    if (await isRunning(mysql)) {
-      say.step('Dumping MySQL databases...');
-      // The password goes through the environment, not argv, so it does not
-      // appear in the container's process list.
-      const res = await run(
-        'docker',
-        [
-          'exec',
-          '-e',
-          `MYSQL_PWD=${ctx.env.MYSQL_ROOT_PASSWORD}`,
-          mysql,
-          'mysqldump',
-          '-u',
-          'root',
-          '--all-databases',
-          '--single-transaction',
-        ],
-        { stdoutFile: join(staging, 'mysql_all.sql') },
-      );
-      if (res.code !== 0) {
-        throw new UserError('mysqldump failed.', (res.stderr || '').trim().split('\n').slice(-3).join('\n'));
+    if (dumpMysql) {
+      if (await isRunning(mysql)) {
+        say.step('Dumping MySQL databases...');
+        // The password goes through the environment, not argv, so it does not
+        // appear in the container's process list.
+        const res = await run(
+          'docker',
+          [
+            'exec',
+            '-e',
+            `MYSQL_PWD=${ctx.env.MYSQL_ROOT_PASSWORD}`,
+            mysql,
+            'mysqldump',
+            '-u',
+            'root',
+            '--all-databases',
+            '--single-transaction',
+          ],
+          { stdoutFile: join(staging, 'mysql_all.sql') },
+        );
+        if (res.code !== 0) {
+          throw new UserError('mysqldump failed.', (res.stderr || '').trim().split('\n').slice(-3).join('\n'));
+        }
+        contents.mysql = true;
+        say.ok('MySQL dump complete.');
+      } else {
+        say.warn(`MySQL container '${mysql}' is not running — skipping.`);
       }
-      contents.mysql = true;
-      say.ok('MySQL dump complete.');
-    } else {
-      say.warn(`MySQL container '${mysql}' is not running — skipping.`);
     }
 
-    if (await isRunning(redis)) {
-      say.step('Copying Redis data...');
-      // Copies the whole /data directory: Redis 7 keeps its AOF in
-      // appendonlydir/, which the old single-file copy silently missed.
-      mkdirSync(join(staging, 'redis'), { recursive: true });
-      const res = await run('docker', ['cp', `${redis}:/data/.`, join(staging, 'redis')]);
-      if (res.code !== 0) {
-        throw new UserError('Could not copy Redis data.', (res.stderr || '').trim());
+    if (dumpRedis) {
+      if (await isRunning(redis)) {
+        say.step('Copying Redis data...');
+        // Copies the whole /data directory: Redis 7 keeps its AOF in
+        // appendonlydir/, which the old single-file copy silently missed.
+        mkdirSync(join(staging, 'redis'), { recursive: true });
+        const res = await run('docker', ['cp', `${redis}:/data/.`, join(staging, 'redis')]);
+        if (res.code !== 0) {
+          throw new UserError('Could not copy Redis data.', (res.stderr || '').trim());
+        }
+        contents.redis = true;
+        say.ok('Redis data copied.');
+      } else {
+        say.warn(`Redis container '${redis}' is not running — skipping.`);
       }
-      contents.redis = true;
-      say.ok('Redis data copied.');
-    } else {
-      say.warn(`Redis container '${redis}' is not running — skipping.`);
     }
 
-    if (await isRunning(postgres)) {
-      say.step('Dumping PostgreSQL databases...');
-      const res = await run(
-        'docker',
-        [
-          'exec',
-          '-e',
-          `PGPASSWORD=${ctx.env.POSTGRES_PASSWORD}`,
-          postgres,
-          'pg_dumpall',
-          '-U',
-          ctx.env.POSTGRES_USER,
-          '--clean',
-        ],
-        { stdoutFile: join(staging, 'postgres_all.sql') },
-      );
-      if (res.code !== 0) {
-        throw new UserError('pg_dumpall failed.', (res.stderr || '').trim().split('\n').slice(-3).join('\n'));
+    if (dumpPostgres) {
+      if (await isRunning(postgres)) {
+        say.step('Dumping PostgreSQL databases...');
+        const res = await run(
+          'docker',
+          [
+            'exec',
+            '-e',
+            `PGPASSWORD=${ctx.env.POSTGRES_PASSWORD}`,
+            postgres,
+            'pg_dumpall',
+            '-U',
+            ctx.env.POSTGRES_USER,
+            '--clean',
+          ],
+          { stdoutFile: join(staging, 'postgres_all.sql') },
+        );
+        if (res.code !== 0) {
+          throw new UserError('pg_dumpall failed.', (res.stderr || '').trim().split('\n').slice(-3).join('\n'));
+        }
+        contents.postgres = true;
+        say.ok('PostgreSQL dump complete.');
+      } else {
+        say.warn(`PostgreSQL container '${postgres}' is not running — skipping.`);
       }
-      contents.postgres = true;
-      say.ok('PostgreSQL dump complete.');
-    } else {
-      say.warn(`PostgreSQL container '${postgres}' is not running — skipping.`);
     }
 
     if (!contents.mysql && !contents.redis && !contents.postgres) {
       throw new UserError(
-        'Nothing to back up — no service was running.',
-        'Start the stack first: pubservices up',
+        service
+          ? `Nothing to back up — ${service} is not running.`
+          : 'Nothing to back up — no service was running.',
+        `Start the container first: pubservices up ${service ?? ''}`.trim(),
       );
     }
 

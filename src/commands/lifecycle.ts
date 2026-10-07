@@ -1,7 +1,13 @@
 import type { Ctx } from '../context.js';
 import { compose } from '../docker.js';
 import { services } from '../env.js';
-import { type ProfileFlags, assertKnownService, profilesForAll, profilesForUp } from '../profiles.js';
+import {
+  type ProfileFlags,
+  assertKnownService,
+  profileForService,
+  profilesForAll,
+  profilesForUp,
+} from '../profiles.js';
 import { confirm } from '../prompt.js';
 import { UserError, color, say } from '../ui.js';
 import { statusCommand } from './status.js';
@@ -28,7 +34,7 @@ export interface UpOptions extends ProfileFlags {
 export async function upCommand(ctx: Ctx, service: string | undefined, opts: UpOptions): Promise<void> {
   if (service) assertKnownService(service, serviceKeys(ctx));
 
-  const profiles = service ? [] : profilesForUp(opts);
+  const profiles = service ? profileForService(service, ctx.env) : profilesForUp(opts);
   const args = ['up', '-d'];
   if (opts.build) args.push('--build');
   if (service) args.push(service);
@@ -48,7 +54,8 @@ export async function downCommand(
       say.meta('Cancelled.');
       return;
     }
-    await composeOrFail(ctx, ['stop', service], [], 'Stop');
+    const profiles = profileForService(service, ctx.env);
+    await composeOrFail(ctx, ['stop', service], profiles, 'Stop');
     say.ok(`Stopped ${service}.`);
     return;
   }
@@ -69,7 +76,8 @@ export async function restartCommand(
 ): Promise<void> {
   if (service) assertKnownService(service, serviceKeys(ctx));
   const args = service ? ['restart', service] : ['restart'];
-  await composeOrFail(ctx, args, service ? [] : profilesForAll(opts), 'Restart');
+  const profiles = service ? profileForService(service, ctx.env) : profilesForAll(opts);
+  await composeOrFail(ctx, args, profiles, 'Restart');
   if (!ctx.json) await statusCommand(ctx);
 }
 
@@ -89,7 +97,8 @@ export async function logsCommand(
   if (opts.follow !== false) args.push('-f');
   if (service) args.push(service);
 
-  await composeOrFail(ctx, args, service ? [] : profilesForAll(opts), 'Logs');
+  const profiles = service ? profileForService(service, ctx.env) : profilesForAll(opts);
+  await composeOrFail(ctx, args, profiles, 'Logs');
 }
 
 export interface BuildOptions extends ProfileFlags {
@@ -107,6 +116,7 @@ export async function buildCommand(
   if (opts.cache === false) args.push('--no-cache');
   if (service) args.push(service);
 
-  await composeOrFail(ctx, args, service ? [] : profilesForAll(opts), 'Build');
+  const profiles = service ? profileForService(service, ctx.env) : profilesForAll(opts);
+  await composeOrFail(ctx, args, profiles, 'Build');
   say.ok('Images rebuilt.');
 }

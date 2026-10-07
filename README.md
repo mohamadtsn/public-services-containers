@@ -72,13 +72,13 @@ status              service health and ports               info      connection 
 up [service]        start services (core or profiled)      down      stop services (data preserved)
 restart [service]   restart services                       logs      follow service logs
 build [service]     rebuild Docker images                  dash      interactive live dashboard
-reload-proxy        test and reload Nginx configuration    edit      open .env in $EDITOR
-backup              dump MySQL & Postgres, copy Redis      backups   list archives (--prune N)
-restore [file]      restore databases from archive         reset     delete all data (destructive)
-static …            manage static & SSR web applications   doctor    system & environment checks
-migrate             import a legacy v1 installation        update    install newer release
-completion …        install shell completions              run       execute command in home dir
-home                print state directory path
+reload-proxy        test and reload Nginx configuration    edit      open config (.env/service) in $EDITOR
+exec [service]      enter container shell (bash/sh)        backup    dump all or individual database
+backups             list archives (--prune N)              restore   restore databases from archive
+reset               delete all data (destructive)          static …  manage static & SSR web applications
+doctor              system & environment checks            migrate   import legacy v1 installation
+update              install newer release                  completion install shell completions
+home                print state directory path             run       execute command in home dir
 ```
 
 Every command accepts `--json` (machine-readable output), `-y` / `--yes` (skip interactive confirmation prompts), and `--home <path>` (or the `PUBSERVICES_HOME` environment variable).
@@ -180,17 +180,43 @@ pubservices static unmount          # Revert host mount
 
 ---
 
+## Service Management & Inspection
+
+### Interactive Shell (`exec`)
+Open an interactive TTY shell (`bash` falling back to `sh`) inside any running container:
+
+```bash
+pubservices exec mysql       # Interactive shell in mysql-main
+pubservices exec nginx       # Interactive shell in nginx-main
+pubservices shell postgres   # `shell` is an alias for `exec`
+```
+
+### Editing Configuration (`edit`)
+Open service configuration files or `.env` in `$EDITOR`:
+
+```bash
+pubservices edit             # Opens ~/.pubservices/.env
+pubservices edit mysql       # Opens ~/.pubservices/mysql/conf.d/custom.cnf
+pubservices edit nginx       # Prompt to choose between nginx.conf and default.conf
+```
+
+---
+
 ## Backup, Restore & Reset
 
 ### Backups
 ```bash
-pubservices backup            # Creates ~/.pubservices/backups/backup_YYYYMMDD_HHMMSS.tar.gz
+pubservices backup            # Creates ~/.pubservices/backups/backup_YYYYMMDD_HHMMSS.tar.gz (all databases)
+pubservices backup mysql      # Back up only MySQL
+pubservices backup postgres   # Back up only PostgreSQL
+pubservices backup redis      # Back up only Redis
 pubservices backups           # List existing archives with timestamps and sizes
 pubservices backups --prune 5 # Retain newest 5 archives and remove older ones
 ```
 - Dumps MySQL using `mysqldump --all-databases --single-transaction`.
 - Dumps PostgreSQL using `pg_dumpall --clean`.
 - Copies Redis `/data` directory (including AOF `appendonlydir`).
+- Supports backing up an individual database service without touching the others.
 - Generates a structured `manifest.json` inside the archive.
 
 ### Restore

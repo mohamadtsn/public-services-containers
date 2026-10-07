@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { type Ctx, emitJson } from '../context.js';
 import { dockerVersion, run } from '../docker.js';
@@ -148,6 +148,22 @@ function checkEcosystem(): Check[] {
       detail: LEGACY_INSTALL_DIR,
       hint: 'A v1 installation is still in place. Run: pubservices migrate',
     });
+  }
+
+  if (existsSync('/usr/local/bin/pubservices')) {
+    try {
+      const target = readlinkSync('/usr/local/bin/pubservices');
+      if (target.includes('public-services-containers')) {
+        out.push({
+          name: 'legacy symlink',
+          level: 'warn',
+          detail: '/usr/local/bin/pubservices points to v1',
+          hint: 'Remove it so npm v2 takes precedence: sudo rm /usr/local/bin/pubservices && hash -r',
+        });
+      }
+    } catch {
+      // Ignored
+    }
   }
 
   if (existsSync('/usr/local/bin/devproxy')) {
