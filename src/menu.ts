@@ -17,7 +17,6 @@ import {
 } from './commands/static.js';
 import { statusCommand } from './commands/status.js';
 import type { Ctx } from './context.js';
-import { printDashboard } from './dashboard.js';
 import { inspectMany } from './docker.js';
 import { services } from './env.js';
 import { packageVersion } from './home.js';
@@ -298,18 +297,10 @@ export async function runMenu(ctx: Ctx): Promise<void> {
 
   for (;;) {
     clearScreen();
-    await printDashboard(ctx);
-    say.blank();
+    const { runLiveMainMenu } = await import('./dash.js');
+    const group = await runLiveMainMenu(ctx);
 
-    const group = await select({
-      message: 'What do you want to do?',
-      options: [
-        ...MENU_GROUPS.map((g) => ({ value: g.value, label: g.label, hint: g.hint })),
-        { value: 'exit', label: 'Exit', hint: '' },
-      ],
-    });
-
-    if (isCancel(group) || group === 'exit') {
+    if (group === 'exit') {
       cancel('Bye.');
       return;
     }

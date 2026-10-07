@@ -5,7 +5,8 @@ import { type ContainerStatus, compose, inspectMany } from './docker.js';
 import { type ServiceInfo, services } from './env.js';
 import { packageVersion } from './home.js';
 import { profilesForUp } from './profiles.js';
-import { tildify } from './ui.js';
+import { type DashboardData, renderDashboard, tildify } from './ui.js';
+import { getDashboardData } from './dashboard.js';
 
 const REFRESH_MS = 2000;
 
@@ -170,4 +171,109 @@ function Dashboard({ ctx }: { ctx: Ctx }) {
 export async function runDash(ctx: Ctx): Promise<void> {
   const app = render(<Dashboard ctx={ctx} />);
   await app.waitUntilExit();
+}
+
+interface MenuItem {
+  value: string;
+  label: string;
+  hint: string;
+}
+
+const MAIN_ITEMS: MenuItem[] = [
+  { value: 'services', label: 'Services', hint: 'start · stop · restart · rebuild' },
+  { value: 'monitor', label: 'Monitor', hint: 'status · connection info · logs' },
+  { value: 'static', label: 'Static & SSR apps', hint: 'deploy · manage web apps' },
+  { value: 'data', label: 'Data & backups', hint: 'backup · restore · reset' },
+  { value: 'config', label: 'Configuration & environment', hint: '.env · doctor' },
+  { value: 'exit', label: 'Exit', hint: 'quit' },
+];
+
+function LiveMainMenu({ ctx, onChoose }: { ctx: Ctx; onChoose: (val: string) => void }) {
+  const { exit } = useApp();
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [cursor, setCursor] = useState(0);
+
+  const refresh = useCallback(async () => {
+    try {
+      const d = await getDashboardData(ctx);
+      setData(d);
+    } catch {
+      // transient docker glitch
+    }
+  }, [ctx]);
+
+  useEffect(() => {
+    void refresh();
+    const timer = setInterval(() => void refresh(), REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [refresh]);
+
+  useInput((input, key) => {
+    if (key.upArrow || input === 'k') {
+      setCursor((c) => (c - 1 + MAIN_ITEMS.length) % MAIN_ITEMS.length);
+    } else if (key.downArrow || input === 'j') {
+      setCursor((c) => (c + 1) % MAIN_ITEMS.length);
+    } else if (key.return) {
+      onChoose(MAIN_ITEMS[cursor]?.value ?? 'exit');
+      exit();
+    } else if (input === 'q' || key.escape) {
+      onChoose('exit');
+      exit();
+    } else if (input === 'R') {
+      void refresh();
+    }
+  });
+
+  return (
+    <Box flexDirection="column" paddingX={1}>
+      {data ? (
+        <Text>{renderDashboard(data)}</Text>
+      ) : (
+        <Text dimColor>  … loading live dashboard</Text>
+      )}
+
+      <Box marginTop={1} flexDirection="column">
+        <Text color="cyan" bold>
+          {'  ◆ What do you want to do?'}
+        </Text>
+        {MAIN_ITEMS.map((item, idx) => {
+          const isSelected = idx === cursor;
+          return (
+            <Box key={item.value}>
+              <Text color={isSelected ? 'cyan' : 'gray'}>
+                {isSelected ? '    ● ' : '    ○ '}
+              </Text>
+              <Text bold={isSelected} color={isSelected ? 'cyan' : undefined}>
+                {item.label.padEnd(32)}
+              </Text>
+              <Text dimColor>{item.hint}</Text>
+            </Box>
+          );
+        })}
+        <Box marginTop={1}>
+          <Text dimColor>
+            {'    ↑↓ navigate   enter select   q exit   R refresh'}
+          </Text>
+        </Box>
+      </Box>
+    </Box>
+  );
+}
+
+/**
+ * Runs the interactive main menu with a live ticking React dashboard.
+ * Real-time updates to container uptimes and health are reflected live.
+ */
+export async function runLiveMainMenu(ctx: Ctx): Promise<string> {
+  let chosen = 'exit';
+  const app = render(
+    <LiveMainMenu
+      ctx={ctx}
+      onChoose={(val) => {
+        chosen = val;
+      }}
+    />,
+  );
+  await app.waitUntilExit();
+  return chosen;
 }
