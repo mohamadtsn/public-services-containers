@@ -122,6 +122,8 @@ export interface DashboardData {
   services: DashboardServiceRow[];
 }
 
+export const DASHBOARD_BOX_WIDTH = 76;
+
 /**
  * Renders the rich, aesthetic ASCII dashboard displayed at the CLI entry
  * and pinned at the top of the interactive menu.
@@ -131,10 +133,10 @@ export function renderDashboard(data: DashboardData): string {
   const healthy = data.services.filter((s) => s.status === 'healthy').length;
   const stopped = data.services.filter((s) => s.status === 'stopped' || s.status === 'missing').length;
 
-  const colService = Math.max(14, ...data.services.map((s) => width(s.label)));
-  const colStatus = 12;
-  const colUptime = Math.max(9, ...data.services.map((s) => width(s.uptime)));
-  const colAddress = Math.max(24, ...data.services.map((s) => width(s.address)));
+  const colService = Math.max(12, ...data.services.map((s) => width(s.label)));
+  const colStatus = 11;
+  const colUptime = Math.max(8, ...data.services.map((s) => width(s.uptime)));
+  const colAddress = Math.max(19, ...data.services.map((s) => width(s.address)));
   const colIp = Math.max(11, ...data.services.map((s) => width(s.ip)));
 
   const tableHeader = [
@@ -143,7 +145,7 @@ export function renderDashboard(data: DashboardData): string {
     pad('UPTIME', colUptime),
     pad('PORT / ADDRESS', colAddress),
     pad('INTERNAL IP', colIp),
-  ].join('   ');
+  ].join('  ');
 
   const contentWidth = width(tableHeader);
 
@@ -151,13 +153,13 @@ export function renderDashboard(data: DashboardData): string {
   const left2 = `${color.meta('Network')}  ${color.brand(data.network)}`;
   const left3 = `${color.meta('Backups')}  ${data.backupsCount > 0 ? `${data.backupsCount} archives (${data.backupsSize})` : color.meta('none')}`;
 
-  const right1 = `${color.meta('Docker')}   ${data.docker ? `${data.docker}${data.compose ? color.meta(` · Compose v${data.compose}`) : ''}` : color.err('daemon offline')}`;
+  const right1 = `${color.meta('Docker')}   ${data.docker ? `${data.docker}${data.compose ? color.meta(` · v${data.compose}`) : ''}` : color.err('daemon offline')}`;
   const right2 = `${color.meta('Home')}     ${color.meta(tildify(data.home))}`;
   const right3 = `${color.meta('Apps')}     ${data.appsCount > 0 ? `${data.appsCount} deployed` : color.meta('none')}`;
 
   const leftMax = Math.max(width(left1), width(left2), width(left3));
   const rightMax = Math.max(width(right1), width(right2), width(right3));
-  const inner = Math.max(contentWidth, leftMax + 4 + rightMax) + 4;
+  const inner = Math.max(72, contentWidth, leftMax + 4 + rightMax) + 2;
 
   const head = '─ PUBSERVICES ';
   const tag = data.updatedAt
@@ -212,7 +214,7 @@ export function renderDashboard(data: DashboardData): string {
       pad(uptimeText, colUptime),
       pad(addressText, colAddress),
       pad(ipText, colIp),
-    ].join('   ');
+    ].join('  ');
 
     printLine(`  ${rowStr}  `);
   }

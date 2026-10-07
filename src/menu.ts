@@ -1,4 +1,4 @@
-import { cancel, intro, isCancel, outro, select } from '@clack/prompts';
+import { intro, isCancel, select } from '@clack/prompts';
 import { backupCommand, backupsCommand } from './commands/backup.js';
 import { doctorCommand } from './commands/doctor.js';
 import { infoCommand } from './commands/info.js';
@@ -295,64 +295,6 @@ export async function runMenu(ctx: Ctx): Promise<void> {
     );
   }
 
-  for (;;) {
-    clearScreen();
-    const { runLiveMainMenu } = await import('./dash.js');
-    const group = await runLiveMainMenu(ctx);
-
-    if (group === 'exit') {
-      cancel('Bye.');
-      return;
-    }
-
-    const chosen = MENU_GROUPS.find((g) => g.value === group);
-    if (!chosen) continue;
-
-    for (;;) {
-      clearScreen();
-      intro(`${color.brand(color.bold('pubservices'))} ${color.meta(`v${packageVersion()} · ${chosen.label}`)}`);
-
-      const action = await select({
-        message: chosen.label,
-        options: [
-          ...chosen.actions.map((a) => ({ value: a.value, label: a.label, hint: a.hint })),
-          { value: 'back', label: '← Back', hint: '' },
-        ],
-      });
-
-      if (isCancel(action)) {
-        cancel('Bye.');
-        return;
-      }
-      if (action === 'back') break;
-
-      const selected = chosen.actions.find((a) => a.value === action);
-      if (!selected) continue;
-
-      if (selected.value !== 'single') {
-        clearScreen();
-        intro(`${color.brand(color.bold(selected.label))} ${color.meta(selected.command)}`);
-      }
-
-      try {
-        const keepGoing = await selected.run(ctx);
-        if (keepGoing === false) {
-          outro('Done.');
-          return;
-        }
-      } catch (err) {
-        // One failed action must not end the session — show it and offer the menu again.
-        if (err instanceof UserError) {
-          say.fail(err.message);
-          if (err.hint) say.meta(`  ${err.hint}`);
-        } else {
-          throw err;
-        }
-      }
-
-      if (selected.value !== 'single') {
-        await pausePrompt();
-      }
-    }
-  }
+  const { runLiveTui } = await import('./dash.js');
+  await runLiveTui(ctx);
 }
