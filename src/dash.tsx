@@ -8,7 +8,7 @@ import { profilesForUp } from './profiles.js';
 import { type DashboardData, renderDashboard, tildify } from './ui.js';
 import { getDashboardData } from './dashboard.js';
 
-const REFRESH_MS = 2000;
+const REFRESH_MS = 1000;
 
 export const TONE: Record<ContainerStatus, string> = {
   healthy: 'green',

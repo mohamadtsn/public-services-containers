@@ -121,23 +121,24 @@ export interface ContainerDetail {
   ip: string;
 }
 
-/** Formats ISO StartedAt timestamp into a clean, human-readable uptime duration. */
+/** Formats ISO StartedAt timestamp into a clean, human-readable uptime duration with live seconds. */
 export function formatUptime(startedAt: string | undefined): string {
   if (!startedAt) return '—';
   const start = new Date(startedAt).getTime();
   if (isNaN(start) || start <= 0) return '—';
   const diffMs = Date.now() - start;
   if (diffMs < 0) return '—';
-  const sec = Math.floor(diffMs / 1000);
-  if (sec < 60) return `${sec}s`;
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min}m`;
-  const hr = Math.floor(min / 60);
-  const remMin = min % 60;
-  if (hr < 24) return remMin > 0 ? `${hr}h ${remMin}m` : `${hr}h`;
+  const totalSec = Math.floor(diffMs / 1000);
+  if (totalSec < 60) return `${totalSec}s`;
+  const sec = totalSec % 60;
+  const totalMin = Math.floor(totalSec / 60);
+  if (totalMin < 60) return `${totalMin}m ${String(sec).padStart(2, '0')}s`;
+  const min = totalMin % 60;
+  const hr = Math.floor(totalMin / 60);
+  if (hr < 24) return `${hr}h ${String(min).padStart(2, '0')}m ${String(sec).padStart(2, '0')}s`;
   const days = Math.floor(hr / 24);
   const remHr = hr % 24;
-  return remHr > 0 ? `${days}d ${remHr}h` : `${days}d`;
+  return `${days}d ${remHr}h`;
 }
 
 /** Detailed inspect covering status, health, uptime and bridge network IP in a single process. */

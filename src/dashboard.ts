@@ -50,6 +50,7 @@ export async function getDashboardData(ctx: Ctx): Promise<DashboardData> {
     backupsCount,
     backupsSize,
     appsCount,
+    updatedAt: new Date().toLocaleTimeString(),
     services: rows,
   };
 }

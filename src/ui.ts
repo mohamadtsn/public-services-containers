@@ -118,6 +118,7 @@ export interface DashboardData {
   backupsCount: number;
   backupsSize: string;
   appsCount: number;
+  updatedAt?: string;
   services: DashboardServiceRow[];
 }
 
@@ -132,7 +133,7 @@ export function renderDashboard(data: DashboardData): string {
 
   const colService = Math.max(14, ...data.services.map((s) => width(s.label)));
   const colStatus = 12;
-  const colUptime = Math.max(7, ...data.services.map((s) => width(s.uptime)));
+  const colUptime = Math.max(9, ...data.services.map((s) => width(s.uptime)));
   const colAddress = Math.max(24, ...data.services.map((s) => width(s.address)));
   const colIp = Math.max(11, ...data.services.map((s) => width(s.ip)));
 
@@ -159,7 +160,9 @@ export function renderDashboard(data: DashboardData): string {
   const inner = Math.max(contentWidth, leftMax + 4 + rightMax) + 4;
 
   const head = '─ PUBSERVICES ';
-  const tag = ` v${data.version} ─`;
+  const tag = data.updatedAt
+    ? ` v${data.version} · ${color.ok(symbol.on + ' LIVE')} ${color.meta(data.updatedAt)} ─`
+    : ` v${data.version} ─`;
   const fill = '─'.repeat(Math.max(0, inner - width(head) - width(tag)));
 
   const lines: string[] = [];
