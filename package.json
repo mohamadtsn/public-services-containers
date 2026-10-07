@@ -1,6 +1,6 @@
 {
   "name": "pubservices",
-  "version": "2.0.0-alpha.0",
+  "version": "2.0.0",
   "description": "Shared Docker infrastructure for local development — MySQL, Redis, Nginx, phpMyAdmin, Mailpit, MinIO",
   "keywords": [
     "docker",
