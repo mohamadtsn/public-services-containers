@@ -52,7 +52,7 @@ _pubservices() {
     cur="\${COMP_WORDS[COMP_CWORD]}"
     prev="\${COMP_WORDS[COMP_CWORD-1]}"
     local commands="${names}"
-    local services="mysql redis nginx phpmyadmin mailpit minio"
+    local services="mysql redis postgres nginx phpmyadmin pgadmin mailpit minio"
 
     if [[ $COMP_CWORD -eq 1 ]]; then
         mapfile -t COMPREPLY < <(compgen -W "$commands" -- "$cur")
@@ -109,13 +109,13 @@ ${commands}
         case "\${words[2]}" in
 ${subBlocks}
             ${serviceBlock})
-                _values 'service' mysql redis nginx phpmyadmin mailpit minio
+                _values 'service' mysql redis postgres nginx phpmyadmin pgadmin mailpit minio
                 ;;
         esac
         return
     fi
 
-    _arguments '--help[show help]' '--json[machine-readable output]' \\
+    _arguments '--help[show help]' '--json[machine-readable output]' \
         '--yes[skip confirmations]' '--home[state directory]:path:_directories'
 }
 
@@ -149,7 +149,7 @@ function fishScript(specs: CommandSpec[]): string {
   const serviceCommands = specs.filter((s) => s.takesService).map((s) => s.name);
   if (serviceCommands.length > 0) {
     lines.push(
-      `complete -c pubservices -n '__fish_seen_subcommand_from ${serviceCommands.join(' ')}' -a 'mysql redis nginx phpmyadmin mailpit minio' -d 'service'`,
+      `complete -c pubservices -n '__fish_seen_subcommand_from ${serviceCommands.join(' ')}' -a 'mysql redis postgres nginx phpmyadmin pgadmin mailpit minio' -d 'service'`,
     );
   }
 

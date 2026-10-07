@@ -10,12 +10,28 @@ describe('profile resolution', () => {
   it('maps flags to compose profiles', () => {
     expect(profilesForUp({ proxy: true })).toEqual(['proxy']);
     expect(profilesForUp({ proxy: true, mail: true })).toEqual(['proxy', 'mail']);
-    expect(profilesForUp({ full: true })).toEqual(['proxy', 'pma', 'mail', 'storage']);
+    expect(profilesForUp({ postgres: true })).toEqual(['postgres']);
+    expect(profilesForUp({ pgadmin: true })).toEqual(['pgadmin']);
+    expect(profilesForUp({ full: true })).toEqual([
+      'proxy',
+      'pma',
+      'mail',
+      'storage',
+      'postgres',
+      'pgadmin',
+    ]);
   });
 
   it('acts on every profile by default for down/restart/logs/build', () => {
     // Stopping "all services" must not leave the optional ones running.
-    expect(profilesForAll({})).toEqual(['proxy', 'pma', 'mail', 'storage']);
+    expect(profilesForAll({})).toEqual([
+      'proxy',
+      'pma',
+      'mail',
+      'storage',
+      'postgres',
+      'pgadmin',
+    ]);
     expect(profilesForAll({ proxy: true })).toEqual(['proxy']);
   });
 

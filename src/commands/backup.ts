@@ -13,7 +13,7 @@ export interface Manifest {
   format: 1;
   createdBy: string;
   createdAt: string;
-  contents: { mysql: boolean; redis: boolean };
+  contents: { mysql: boolean; redis: boolean; postgres: boolean };
 }
 
 function timestamp(): string {
@@ -30,13 +30,14 @@ async function isRunning(container: string): Promise<boolean> {
 export async function backupCommand(ctx: Ctx): Promise<void> {
   const mysql = ctx.env.MYSQL_CONTAINER_NAME;
   const redis = ctx.env.REDIS_CONTAINER_NAME;
+  const postgres = ctx.env.POSTGRES_CONTAINER_NAME;
 
   const dir = join(ctx.home, 'backups');
   mkdirSync(dir, { recursive: true });
   const archive = join(dir, `backup_${timestamp()}.tar.gz`);
 
   const staging = mkdtempSync(join(tmpdir(), 'pubservices-backup-'));
-  const contents = { mysql: false, redis: false };
+  const contents = { mysql: false, redis: false, postgres: false };
 
   try {
     if (await isRunning(mysql)) {
@@ -82,7 +83,32 @@ export async function backupCommand(ctx: Ctx): Promise<void> {
       say.warn(`Redis container '${redis}' is not running — skipping.`);
     }
 
-    if (!contents.mysql && !contents.redis) {
+    if (await isRunning(postgres)) {
+      say.step('Dumping PostgreSQL databases...');
+      const res = await run(
+        'docker',
+        [
+          'exec',
+          '-e',
+          `PGPASSWORD=${ctx.env.POSTGRES_PASSWORD}`,
+          postgres,
+          'pg_dumpall',
+          '-U',
+          ctx.env.POSTGRES_USER,
+          '--clean',
+        ],
+        { stdoutFile: join(staging, 'postgres_all.sql') },
+      );
+      if (res.code !== 0) {
+        throw new UserError('pg_dumpall failed.', (res.stderr || '').trim().split('\n').slice(-3).join('\n'));
+      }
+      contents.postgres = true;
+      say.ok('PostgreSQL dump complete.');
+    } else {
+      say.warn(`PostgreSQL container '${postgres}' is not running — skipping.`);
+    }
+
+    if (!contents.mysql && !contents.redis && !contents.postgres) {
       throw new UserError(
         'Nothing to back up — no service was running.',
         'Start the stack first: pubservices up',

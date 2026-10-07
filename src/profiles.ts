@@ -6,6 +6,8 @@ export interface ProfileFlags {
   pma?: boolean;
   mail?: boolean;
   storage?: boolean;
+  postgres?: boolean;
+  pgadmin?: boolean;
   full?: boolean;
 }
 
@@ -14,6 +16,8 @@ const FLAG_TO_PROFILE: Array<[keyof ProfileFlags, string]> = [
   ['pma', 'pma'],
   ['mail', 'mail'],
   ['storage', 'storage'],
+  ['postgres', 'postgres'],
+  ['pgadmin', 'pgadmin'],
 ];
 
 /**

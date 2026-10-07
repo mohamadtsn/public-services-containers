@@ -101,7 +101,7 @@ describe('published package', () => {
 
   it('runs its read-only commands from the packed build', () => {
     const status = JSON.parse(cli('--json', 'status')) as { services: unknown[] };
-    expect(status.services).toHaveLength(6);
+    expect(status.services).toHaveLength(8);
 
     const info = JSON.parse(cli('--json', 'info')) as { mysql: { port: number } };
     expect(info.mysql.port).toBe(43306);

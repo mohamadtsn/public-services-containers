@@ -18,7 +18,7 @@ export interface ResetOptions {
  */
 export async function resetCommand(ctx: Ctx, opts: ResetOptions = {}): Promise<void> {
   say.blank();
-  console.log(`  ${color.err(color.bold('This permanently deletes all MySQL, Redis and MinIO data.'))}`);
+  console.log(`  ${color.err(color.bold('This permanently deletes all MySQL, Redis, PostgreSQL and MinIO data.'))}`);
   say.meta(`  home  ${ctx.home}`);
   say.meta('  Backups in backups/ are kept.');
   say.blank();
@@ -38,7 +38,7 @@ export async function resetCommand(ctx: Ctx, opts: ResetOptions = {}): Promise<v
   }
 
   say.step('Clearing data directories...');
-  await purgeDataDirs(ctx.home, ['mysql', 'redis', 'minio']);
+  await purgeDataDirs(ctx.home, ['mysql', 'redis', 'postgres', 'minio']);
 
   if (opts.purge) {
     const { rmSync } = await import('node:fs');

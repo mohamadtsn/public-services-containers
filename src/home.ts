@@ -9,6 +9,7 @@ import { UserError } from './ui.js';
 const DIRS = [
   'data/mysql',
   'data/redis',
+  'data/postgres',
   'data/minio',
   'nginx/site-enabled',
   'nginx/certificates',

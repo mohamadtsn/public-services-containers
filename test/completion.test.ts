@@ -44,6 +44,8 @@ describe('completion generation', () => {
       const script = renderCompletion(shell, specs);
       for (const spec of specs) expect(script).toContain(spec.name);
       expect(script).toContain('mysql');
+      expect(script).toContain('postgres');
+      expect(script).toContain('pgadmin');
       expect(script.length).toBeGreaterThan(100);
     });
   }

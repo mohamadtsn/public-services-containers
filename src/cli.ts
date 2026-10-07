@@ -20,6 +20,8 @@ import { restoreCommand } from './commands/restore.js';
 import { editCommand, runCommand } from './commands/shell.js';
 import { updateCommand } from './commands/update.js';
 import {
+  type StaticAddOptions,
+  type StaticUpdateOptions,
   staticAdd,
   staticList,
   staticMount,
@@ -94,6 +96,8 @@ const withProfiles = (cmd: Command): Command =>
     .option('--pma', 'include phpMyAdmin')
     .option('--mail', 'include Mailpit')
     .option('--storage', 'include MinIO')
+    .option('--postgres', 'include PostgreSQL')
+    .option('--pgadmin', 'include pgAdmin')
     .option('--full', 'include every optional service');
 
 withProfiles(
@@ -199,17 +203,22 @@ const staticCmd = program
 staticCmd
   .command('add')
   .argument('[name]')
-  .argument('[source]', 'build output directory to sync from')
-  .description('sync a build directory into nginx/static/ and remember its source')
-  .action(async (name: string | undefined, source: string | undefined) =>
-    staticAdd(context(globals()), name, source),
+  .argument('[source]', 'project directory or build output directory')
+  .option('--build', 'force a fresh build before deploying')
+  .option('--no-build', 'skip the build step even if output is missing')
+  .description('detect framework, build if needed, and deploy a site')
+  .action(async (name: string | undefined, source: string | undefined, opts: StaticAddOptions) =>
+    staticAdd(context(globals()), name, source, opts),
   );
 
 staticCmd
   .command('update')
   .argument('[name]', 'omit to update every site with a recorded source')
-  .description('re-sync a static site from its recorded source')
-  .action(async (name: string | undefined) => staticUpdate(context(globals()), name));
+  .option('--build', 'rebuild the project before syncing')
+  .description('re-sync a static site or restart an SSR container')
+  .action(async (name: string | undefined, opts: StaticUpdateOptions) =>
+    staticUpdate(context(globals()), name, opts),
+  );
 
 staticCmd
   .command('remove')

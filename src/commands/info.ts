@@ -11,6 +11,7 @@ export function infoCommand(ctx: Ctx): void {
 
   const mysqlUrl = `mysql://${e.MYSQL_USER}:${e.MYSQL_PASSWORD}@localhost:${e.MYSQL_PORT}/${e.MYSQL_DATABASE}`;
   const redisUrl = `redis://localhost:${e.REDIS_PORT}`;
+  const postgresUrl = `postgresql://${e.POSTGRES_USER}:${e.POSTGRES_PASSWORD}@localhost:${e.POSTGRES_PORT}/${e.POSTGRES_DB}`;
 
   if (ctx.json) {
     emitJson({
@@ -31,7 +32,21 @@ export function infoCommand(ctx: Ctx): void {
         url: redisUrl,
         containerHost: e.REDIS_CONTAINER_NAME,
       },
+      postgres: {
+        host: 'localhost',
+        port: Number(e.POSTGRES_PORT),
+        database: e.POSTGRES_DB,
+        user: e.POSTGRES_USER,
+        password: e.POSTGRES_PASSWORD,
+        url: postgresUrl,
+        containerHost: e.POSTGRES_CONTAINER_NAME,
+      },
       phpmyadmin: { url: `http://localhost:${e.PMA_PORT}` },
+      pgadmin: {
+        url: `http://localhost:${e.PGADMIN_PORT}`,
+        email: e.PGADMIN_DEFAULT_EMAIL,
+        password: e.PGADMIN_DEFAULT_PASSWORD,
+      },
       mailpit: {
         ui: `http://localhost:${e.MAILPIT_HTTP_PORT}`,
         smtpHost: 'localhost',
@@ -75,7 +90,28 @@ export function infoCommand(ctx: Ctx): void {
   );
   say.blank();
 
+  console.log(
+    section('PostgreSQL', [
+      ['host', `localhost:${e.POSTGRES_PORT}`],
+      ['database', e.POSTGRES_DB],
+      ['user', e.POSTGRES_USER],
+      ['password', e.POSTGRES_PASSWORD],
+      ['url', color.meta(postgresUrl)],
+      ['from container', `${e.POSTGRES_CONTAINER_NAME}:5432`],
+    ]),
+  );
+  say.blank();
+
   console.log(section('phpMyAdmin', [['url', `http://localhost:${e.PMA_PORT}`]]));
+  say.blank();
+
+  console.log(
+    section('pgAdmin', [
+      ['url', `http://localhost:${e.PGADMIN_PORT}`],
+      ['email', e.PGADMIN_DEFAULT_EMAIL],
+      ['password', e.PGADMIN_DEFAULT_PASSWORD],
+    ]),
+  );
   say.blank();
 
   console.log(

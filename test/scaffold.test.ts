@@ -49,6 +49,7 @@ describe('home', () => {
     expect(first.created).toBe(true);
     expect(existsSync(join(home, '.env'))).toBe(true);
     expect(existsSync(join(home, 'data/mysql'))).toBe(true);
+    expect(existsSync(join(home, 'data/postgres'))).toBe(true);
     expect(existsSync(join(home, 'docker-compose.yml'))).toBe(true);
     expect(readState(home).version).not.toBe('');
 
@@ -91,8 +92,10 @@ describe('env', () => {
     expect(list.map((s) => s.key)).toEqual([
       'mysql',
       'redis',
+      'postgres',
       'nginx',
       'phpmyadmin',
+      'pgadmin',
       'mailpit',
       'minio',
     ]);

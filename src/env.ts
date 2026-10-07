@@ -9,8 +9,10 @@ import { parse } from 'dotenv';
 const DEFAULTS = {
   MYSQL_CONTAINER_NAME: 'mysql-main',
   REDIS_CONTAINER_NAME: 'redis-main',
+  POSTGRES_CONTAINER_NAME: 'postgres-main',
   NGINX_CONTAINER_NAME: 'nginx-main',
   PMA_CONTAINER_NAME: 'phpmyadmin',
+  PGADMIN_CONTAINER_NAME: 'pgadmin',
   MAILPIT_CONTAINER_NAME: 'mailpit',
   MINIO_CONTAINER_NAME: 'minio',
   NETWORK_NAME: 'public-service-network',
@@ -21,9 +23,16 @@ const DEFAULTS = {
   MYSQL_ROOT_PASSWORD: 'root',
   MYSQL_PORT: '43306',
   REDIS_PORT: '46379',
+  POSTGRES_DB: 'main',
+  POSTGRES_USER: 'main_user',
+  POSTGRES_PASSWORD: 'password',
+  POSTGRES_PORT: '45432',
   NGINX_HTTP_PORT: '80',
   NGINX_HTTPS_PORT: '443',
   PMA_PORT: '18080',
+  PGADMIN_PORT: '18081',
+  PGADMIN_DEFAULT_EMAIL: 'admin@local.dev',
+  PGADMIN_DEFAULT_PASSWORD: 'admin',
   MAILPIT_SMTP_PORT: '1025',
   MAILPIT_HTTP_PORT: '8025',
   MINIO_API_PORT: '9000',
@@ -71,6 +80,13 @@ export function services(env: Env): ServiceInfo[] {
       address: `localhost:${env.REDIS_PORT}`,
     },
     {
+      key: 'postgres',
+      label: 'PostgreSQL',
+      container: env.POSTGRES_CONTAINER_NAME,
+      profile: 'postgres',
+      address: `localhost:${env.POSTGRES_PORT}`,
+    },
+    {
       key: 'nginx',
       label: 'Nginx',
       container: env.NGINX_CONTAINER_NAME,
@@ -83,6 +99,13 @@ export function services(env: Env): ServiceInfo[] {
       container: env.PMA_CONTAINER_NAME,
       profile: 'pma',
       address: `http://localhost:${env.PMA_PORT}`,
+    },
+    {
+      key: 'pgadmin',
+      label: 'pgAdmin',
+      container: env.PGADMIN_CONTAINER_NAME,
+      profile: 'pgadmin',
+      address: `http://localhost:${env.PGADMIN_PORT}`,
     },
     {
       key: 'mailpit',
@@ -101,4 +124,11 @@ export function services(env: Env): ServiceInfo[] {
   ];
 }
 
-export const ALL_PROFILES = ['proxy', 'pma', 'mail', 'storage'] as const;
+export const ALL_PROFILES = [
+  'proxy',
+  'pma',
+  'mail',
+  'storage',
+  'postgres',
+  'pgadmin',
+] as const;

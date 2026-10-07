@@ -43,6 +43,30 @@ services:
       retries: 3
       timeout: 5s
 
+  postgres:
+    image: 'postgres:16-alpine'
+    container_name: ${POSTGRES_CONTAINER_NAME:-postgres-main}
+    profiles:
+      - postgres
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    restart: unless-stopped
+    ports:
+      - '${POSTGRES_PORT:-45432}:5432'
+    environment:
+      POSTGRES_DB: '${POSTGRES_DB:-main}'
+      POSTGRES_USER: '${POSTGRES_USER:-main_user}'
+      POSTGRES_PASSWORD: '${POSTGRES_PASSWORD:-password}'
+    volumes:
+      - './data/postgres:/var/lib/postgresql/data'
+    networks:
+      - public-service-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-main_user} -d ${POSTGRES_DB:-main}"]
+      interval: 10s
+      retries: 5
+      timeout: 5s
+
   nginx:
     build:
       context: ./nginx
@@ -91,6 +115,28 @@ services:
     volumes:
       - 'main-phpmyadmin:/sessions'
 
+  pgadmin:
+    image: 'dpage/pgadmin4:latest'
+    container_name: ${PGADMIN_CONTAINER_NAME:-pgadmin}
+    profiles:
+      - pgadmin
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    restart: unless-stopped
+    ports:
+      - '${PGADMIN_PORT:-18081}:80'
+    environment:
+      PGADMIN_DEFAULT_EMAIL: '${PGADMIN_DEFAULT_EMAIL:-admin@local.dev}'
+      PGADMIN_DEFAULT_PASSWORD: '${PGADMIN_DEFAULT_PASSWORD:-admin}'
+      PGADMIN_LISTEN_PORT: 80
+    volumes:
+      - 'main-pgadmin:/var/lib/pgadmin'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - public-service-network
+
   mailpit:
     image: 'axllent/mailpit:latest'
     container_name: ${MAILPIT_CONTAINER_NAME:-mailpit}
@@ -133,4 +179,6 @@ networks:
 
 volumes:
   main-phpmyadmin:
+    driver: local
+  main-pgadmin:
     driver: local

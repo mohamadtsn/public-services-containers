@@ -23,9 +23,11 @@ export const PREFIX = 'psvc-it-';
 const PORTS = {
   MYSQL_PORT: '45306',
   REDIS_PORT: '45379',
+  POSTGRES_PORT: '45532',
   NGINX_HTTP_PORT: '45080',
   NGINX_HTTPS_PORT: '45443',
   PMA_PORT: '45880',
+  PGADMIN_PORT: '45881',
   MAILPIT_SMTP_PORT: '45025',
   MAILPIT_HTTP_PORT: '45825',
   MINIO_API_PORT: '45900',
@@ -35,17 +37,40 @@ const PORTS = {
 const CONTAINERS = {
   MYSQL_CONTAINER_NAME: `${PREFIX}mysql`,
   REDIS_CONTAINER_NAME: `${PREFIX}redis`,
+  POSTGRES_CONTAINER_NAME: `${PREFIX}postgres`,
   NGINX_CONTAINER_NAME: `${PREFIX}nginx`,
   PMA_CONTAINER_NAME: `${PREFIX}pma`,
+  PGADMIN_CONTAINER_NAME: `${PREFIX}pgadmin`,
   MAILPIT_CONTAINER_NAME: `${PREFIX}mailpit`,
   MINIO_CONTAINER_NAME: `${PREFIX}minio`,
 } as const;
 
 /** Names and ports that belong to a real installation and must never be used here. */
 const LIVE = {
-  containers: ['mysql-main', 'redis-main', 'nginx-main', 'phpmyadmin', 'mailpit', 'minio'],
+  containers: [
+    'mysql-main',
+    'redis-main',
+    'postgres-main',
+    'nginx-main',
+    'phpmyadmin',
+    'pgadmin',
+    'mailpit',
+    'minio',
+  ],
   network: 'public-service-network',
-  ports: ['43306', '46379', '80', '443', '18080', '1025', '8025', '9000', '9001'],
+  ports: [
+    '43306',
+    '46379',
+    '45432',
+    '80',
+    '443',
+    '18080',
+    '18081',
+    '1025',
+    '8025',
+    '9000',
+    '9001',
+  ],
 };
 
 export interface Sandbox {
@@ -118,7 +143,7 @@ export async function createSandbox(): Promise<Sandbox> {
     await sweep();
     // Containers write into data/ as their own uid, so the invoking user cannot
     // remove those files directly. Same reason `reset` uses this path.
-    await purgeDataDirs(home, ['mysql', 'redis', 'minio']);
+    await purgeDataDirs(home, ['mysql', 'redis', 'postgres', 'minio']);
     rmSync(home, { recursive: true, force: true });
   };
 

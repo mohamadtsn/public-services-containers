@@ -14,8 +14,10 @@ import { type Ctx, context } from '../src/context.js';
 const ISOLATED_ENV = [
   'MYSQL_CONTAINER_NAME=pubservices-test-mysql',
   'REDIS_CONTAINER_NAME=pubservices-test-redis',
+  'POSTGRES_CONTAINER_NAME=pubservices-test-postgres',
   'NGINX_CONTAINER_NAME=pubservices-test-nginx',
   'PMA_CONTAINER_NAME=pubservices-test-pma',
+  'PGADMIN_CONTAINER_NAME=pubservices-test-pgadmin',
   'MAILPIT_CONTAINER_NAME=pubservices-test-mailpit',
   'MINIO_CONTAINER_NAME=pubservices-test-minio',
   'MYSQL_PORT=13306',
@@ -56,7 +58,7 @@ describe('read-only commands', () => {
     out.restore();
 
     expect(parsed.home).toBe(dir);
-    expect(parsed.services).toHaveLength(6);
+    expect(parsed.services).toHaveLength(8);
     // Nothing named pubservices-test-* exists, so every state must be 'missing'.
     expect(parsed.services.every((s) => s.status === 'missing')).toBe(true);
     expect(parsed.services.every((s) => s.container.startsWith('pubservices-test-'))).toBe(true);
@@ -65,11 +67,20 @@ describe('read-only commands', () => {
   it('info builds connection URLs from .env', async () => {
     const out = captureStdout();
     infoCommand(ctx);
-    const parsed = JSON.parse(out.lines()) as { mysql: { port: number; url: string } };
+    const parsed = JSON.parse(out.lines()) as {
+      mysql: { port: number; url: string };
+      postgres: { port: number; url: string; host: string; database: string; user: string; containerHost: string };
+      pgadmin: { url: string; email: string };
+    };
     out.restore();
 
     expect(parsed.mysql.port).toBe(13306);
     expect(parsed.mysql.url).toContain(':13306/');
+    expect(parsed.postgres).toBeDefined();
+    expect(parsed.postgres.port).toBe(45432);
+    expect(parsed.postgres.url).toContain('postgresql://');
+    expect(parsed.pgadmin).toBeDefined();
+    expect(parsed.pgadmin.url).toBe('http://localhost:18081');
   });
 
   it('doctor returns checks and does not fail on a healthy home', async () => {

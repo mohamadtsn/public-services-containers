@@ -97,6 +97,7 @@ suite('backup, restore and reset', () => {
     const dataDir = join(sandbox.home, 'data');
     expect(readdirSync(join(dataDir, 'mysql'))).toHaveLength(0);
     expect(readdirSync(join(dataDir, 'redis'))).toHaveLength(0);
+    expect(readdirSync(join(dataDir, 'postgres'))).toHaveLength(0);
 
     // Backups survive a reset.
     expect(listBackups(sandbox.home)).toHaveLength(1);

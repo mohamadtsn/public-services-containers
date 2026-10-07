@@ -60,17 +60,21 @@ export async function restoreCommand(ctx: Ctx, fileArg: string | undefined): Pro
     const manifest = readManifest(staging);
     const sqlFile = join(staging, 'mysql_all.sql');
     const redisDir = join(staging, 'redis');
+    const sqlPgFile = join(staging, 'postgres_all.sql');
     // Archives from v1 have no manifest: fall back to what is actually present.
     const hasMysql = manifest?.contents.mysql ?? existsSync(sqlFile);
     const hasRedis = manifest?.contents.redis ?? existsSync(redisDir);
+    const hasPostgres = manifest?.contents.postgres ?? existsSync(sqlPgFile);
 
     say.blank();
     say.meta(`  archive  ${archive}`);
     if (manifest) say.meta(`  created  ${manifest.createdAt} by ${manifest.createdBy}`);
-    say.meta(`  contains ${[hasMysql && 'MySQL', hasRedis && 'Redis'].filter(Boolean).join(', ') || 'nothing'}`);
+    say.meta(
+      `  contains ${[hasMysql && 'MySQL', hasRedis && 'Redis', hasPostgres && 'PostgreSQL'].filter(Boolean).join(', ') || 'nothing'}`,
+    );
     say.blank();
 
-    if (!hasMysql && !hasRedis) throw new UserError('This archive contains no restorable data.');
+    if (!hasMysql && !hasRedis && !hasPostgres) throw new UserError('This archive contains no restorable data.');
 
     if (!(await confirm(ctx, `Overwrite current data with this backup?`))) {
       say.meta('Cancelled.');
@@ -79,6 +83,7 @@ export async function restoreCommand(ctx: Ctx, fileArg: string | undefined): Pro
 
     if (hasMysql) await restoreMysql(ctx, sqlFile);
     if (hasRedis) await restoreRedis(ctx, redisDir);
+    if (hasPostgres) await restorePostgres(ctx, sqlPgFile);
 
     say.blank();
     say.ok('Restore complete.');
@@ -108,6 +113,39 @@ async function restoreMysql(ctx: Ctx, sqlFile: string): Promise<void> {
     throw new UserError('MySQL restore failed.', (res.stderr || '').trim().split('\n').slice(-3).join('\n'));
   }
   say.ok('MySQL restored.');
+}
+
+async function restorePostgres(ctx: Ctx, sqlFile: string): Promise<void> {
+  const container = ctx.env.POSTGRES_CONTAINER_NAME;
+  const state = (await inspectMany([container])).get(container);
+  if (!state || state === 'missing' || state === 'stopped') {
+    throw new UserError(
+      `PostgreSQL container '${container}' is not running — cannot restore.`,
+      'Start it first: pubservices up --postgres',
+    );
+  }
+
+  say.step('Restoring PostgreSQL...');
+  const res = await run(
+    'docker',
+    [
+      'exec',
+      '-i',
+      '-e',
+      `PGPASSWORD=${ctx.env.POSTGRES_PASSWORD}`,
+      container,
+      'psql',
+      '-U',
+      ctx.env.POSTGRES_USER,
+      '-d',
+      ctx.env.POSTGRES_DB,
+    ],
+    { stdinFile: sqlFile },
+  );
+  if (res.code !== 0) {
+    throw new UserError('PostgreSQL restore failed.', (res.stderr || '').trim().split('\n').slice(-3).join('\n'));
+  }
+  say.ok('PostgreSQL restored.');
 }
 
 async function restoreRedis(ctx: Ctx, redisDir: string): Promise<void> {
