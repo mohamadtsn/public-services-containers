@@ -177,13 +177,17 @@ function checkEcosystem(): Check[] {
   return out;
 }
 
-export async function doctorCommand(ctx: Ctx): Promise<void> {
-  const checks: Check[] = [
+export async function runDoctorChecks(ctx: Ctx): Promise<Check[]> {
+  return [
     ...(await checkDocker()),
     ...checkHome(ctx),
     await checkNpmPrefix(),
     ...checkEcosystem(),
   ];
+}
+
+export async function doctorCommand(ctx: Ctx): Promise<void> {
+  const checks: Check[] = await runDoctorChecks(ctx);
 
   if (ctx.json) {
     emitJson({ home: ctx.home, checks });

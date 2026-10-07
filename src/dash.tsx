@@ -1,8 +1,7 @@
 import { Box, Text, render, useApp, useInput } from 'ink';
 import { useCallback, useEffect, useState } from 'react';
-import { backupCommand, backupsCommand } from './commands/backup.js';
-import { doctorCommand } from './commands/doctor.js';
-import { infoCommand } from './commands/info.js';
+import { backupCommand, listBackups } from './commands/backup.js';
+import { type Check, runDoctorChecks } from './commands/doctor.js';
 import {
   buildCommand,
   downCommand,
@@ -21,25 +20,23 @@ import {
 } from './commands/shell.js';
 import {
   staticAdd,
-  staticList,
   staticMount,
   staticRemove,
   staticUnmount,
   staticUpdate,
 } from './commands/static.js';
-import { statusCommand } from './commands/status.js';
 import type { Ctx } from './context.js';
 import { getDashboardData } from './dashboard.js';
 import { type ContainerStatus, compose, inspectMany } from './docker.js';
 import { type ServiceInfo, services } from './env.js';
 import { packageVersion } from './home.js';
 import { profilesForUp } from './profiles.js';
+import { readState } from './state.js';
 import {
   DASHBOARD_BOX_WIDTH,
   type DashboardData,
   UserError,
   clearScreen,
-  color,
   renderDashboard,
   say,
   tildify,
@@ -217,9 +214,15 @@ export type ScreenState =
   | { type: 'service_configs'; serviceKey: string }
   | { type: 'logs_service_select' }
   | { type: 'monitor' }
+  | { type: 'connection_info' }
+  | { type: 'doctor_view' }
+  | { type: 'status_view' }
   | { type: 'static' }
+  | { type: 'static_sites_view' }
   | { type: 'data' }
-  | { type: 'config' };
+  | { type: 'backups_view' }
+  | { type: 'config' }
+  | { type: 'home_view' };
 
 export interface MenuItem {
   value: string;
@@ -233,7 +236,6 @@ export interface MenuItem {
 interface TerminalRequest {
   type: 'terminal';
   run: () => Promise<void>;
-  pause: boolean;
   returnScreen: ScreenState;
 }
 
@@ -248,6 +250,256 @@ interface LiveInteractiveTuiProps {
   initialScreen: ScreenState;
   onResolve: (res: TuiResolution) => void;
 }
+
+/* ------------------------------------------------------------------ */
+/*  Native Subview Components                                         */
+/* ------------------------------------------------------------------ */
+
+function ConnectionInfoView({ ctx }: { ctx: Ctx }) {
+  const e = ctx.env;
+  return (
+    <Box flexDirection="column" paddingY={0}>
+      <Box marginBottom={1}>
+        <Text color="cyan" bold>
+          Connection Details & Credentials
+        </Text>
+      </Box>
+
+      <Box flexDirection="column" marginBottom={1}>
+        <Text bold color="yellow">
+          MySQL
+        </Text>
+        <Text>{`  Host: localhost:${e.MYSQL_PORT}   Database: ${e.MYSQL_DATABASE}`}</Text>
+        <Text>{`  User: ${e.MYSQL_USER}   Password: ${e.MYSQL_PASSWORD}`}</Text>
+        <Text dimColor>{`  URL: mysql://${e.MYSQL_USER}:${e.MYSQL_PASSWORD}@localhost:${e.MYSQL_PORT}/${e.MYSQL_DATABASE}`}</Text>
+        <Text dimColor>{`  In stack: ${e.MYSQL_CONTAINER_NAME}:3306`}</Text>
+      </Box>
+
+      <Box flexDirection="column" marginBottom={1}>
+        <Text bold color="red">
+          Redis
+        </Text>
+        <Text>{`  Host: localhost:${e.REDIS_PORT}`}</Text>
+        <Text dimColor>{`  URL: redis://localhost:${e.REDIS_PORT}`}</Text>
+        <Text dimColor>{`  In stack: ${e.REDIS_CONTAINER_NAME}:6379`}</Text>
+      </Box>
+
+      <Box flexDirection="column" marginBottom={1}>
+        <Text bold color="blue">
+          PostgreSQL
+        </Text>
+        <Text>{`  Host: localhost:${e.POSTGRES_PORT}   Database: ${e.POSTGRES_DB}`}</Text>
+        <Text>{`  User: ${e.POSTGRES_USER}   Password: ${e.POSTGRES_PASSWORD}`}</Text>
+        <Text dimColor>{`  URL: postgresql://${e.POSTGRES_USER}:${e.POSTGRES_PASSWORD}@localhost:${e.POSTGRES_PORT}/${e.POSTGRES_DB}`}</Text>
+        <Text dimColor>{`  In stack: ${e.POSTGRES_CONTAINER_NAME}:5432`}</Text>
+      </Box>
+
+      <Box flexDirection="column" marginBottom={1}>
+        <Text bold color="cyan">
+          Web UIs & Tools
+        </Text>
+        <Text>{`  phpMyAdmin:  http://localhost:${e.PMA_PORT}`}</Text>
+        <Text>{`  pgAdmin:     http://localhost:${e.PGADMIN_PORT} (user: ${e.PGADMIN_DEFAULT_EMAIL})`}</Text>
+        <Text>{`  Mailpit:     http://localhost:${e.MAILPIT_HTTP_PORT} (SMTP: :${e.MAILPIT_SMTP_PORT})`}</Text>
+        <Text>{`  MinIO UI:    http://localhost:${e.MINIO_CONSOLE_PORT} (API: :${e.MINIO_API_PORT})`}</Text>
+      </Box>
+
+      <Box marginTop={1}>
+        <Text dimColor>  [Press Enter or Esc to return to Monitor]</Text>
+      </Box>
+    </Box>
+  );
+}
+
+function DoctorView({ ctx }: { ctx: Ctx }) {
+  const [checks, setChecks] = useState<Check[] | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void runDoctorChecks(ctx).then((res) => {
+      if (active) setChecks(res);
+    });
+    return () => {
+      active = false;
+    };
+  }, [ctx]);
+
+  if (!checks) {
+    return (
+      <Box flexDirection="column" paddingY={1}>
+        <Text color="yellow">  ⠋ Running environment checks (Docker, permissions, .env)...</Text>
+      </Box>
+    );
+  }
+
+  return (
+    <Box flexDirection="column" paddingY={0}>
+      <Box marginBottom={1}>
+        <Text color="cyan" bold>
+          Environment Diagnostics (Doctor)
+        </Text>
+      </Box>
+      {checks.map((c, i) => {
+        const mark = c.level === 'ok' ? '✔' : c.level === 'warn' ? '⚠' : '✖';
+        const colorName = c.level === 'ok' ? 'green' : c.level === 'warn' ? 'yellow' : 'red';
+        return (
+          <Box key={i} flexDirection="column" marginBottom={c.hint ? 1 : 0}>
+            <Box>
+              <Text color={colorName}>{`  ${mark} `}</Text>
+              <Text bold>{c.name.padEnd(18)}</Text>
+              <Text>{c.detail}</Text>
+            </Box>
+            {c.hint ? (
+              <Box paddingLeft={4}>
+                <Text dimColor>{`Hint: ${c.hint}`}</Text>
+              </Box>
+            ) : null}
+          </Box>
+        );
+      })}
+      <Box marginTop={1}>
+        <Text dimColor>  [Press Enter or Esc to return to Monitor]</Text>
+      </Box>
+    </Box>
+  );
+}
+
+function StatusView({ ctx, data }: { ctx: Ctx; data: DashboardData | null }) {
+  const running = data?.services.filter((s) => s.status === 'running' || s.status === 'healthy').length ?? 0;
+  const stopped = data?.services.filter((s) => s.status === 'stopped' || s.status === 'missing').length ?? 0;
+
+  return (
+    <Box flexDirection="column" paddingY={0}>
+      <Box marginBottom={1}>
+        <Text color="cyan" bold>
+          Stack Status Overview
+        </Text>
+      </Box>
+      <Box marginBottom={1}>
+        <Text>  Live status is continually updating in the dashboard table above.</Text>
+      </Box>
+      <Box flexDirection="column">
+        <Text>{`  • Active containers: ${running} running · ${stopped} stopped`}</Text>
+        <Text>{`  • Docker network:    ${ctx.env.NETWORK_NAME || 'public-service-network'}`}</Text>
+        <Text>{`  • State directory:   ${tildify(ctx.home)}`}</Text>
+      </Box>
+      <Box marginTop={1}>
+        <Text dimColor>  [Press Enter or Esc to return to Monitor]</Text>
+      </Box>
+    </Box>
+  );
+}
+
+function BackupsView({ ctx }: { ctx: Ctx }) {
+  const backups = listBackups(ctx.home);
+
+  return (
+    <Box flexDirection="column" paddingY={0}>
+      <Box marginBottom={1}>
+        <Text color="cyan" bold>
+          Database Backup Archives
+        </Text>
+      </Box>
+      {backups.length === 0 ? (
+        <Box flexDirection="column">
+          <Text dimColor>  No backup files found in backups/ directory.</Text>
+          <Text dimColor>  Use 'Data & backups › Create a backup' to dump databases.</Text>
+        </Box>
+      ) : (
+        <Box flexDirection="column">
+          {backups.map((b, i) => {
+            const sizeMb = (b.size / 1_048_576).toFixed(1);
+            const dateStr = new Date(b.mtime).toLocaleString();
+            return (
+              <Box key={i}>
+                <Text color="cyan">  ● </Text>
+                <Text bold>{b.file.padEnd(30)}</Text>
+                <Text color="yellow">{`${sizeMb} MB`.padEnd(10)}</Text>
+                <Text dimColor>{dateStr}</Text>
+              </Box>
+            );
+          })}
+        </Box>
+      )}
+      <Box marginTop={1}>
+        <Text dimColor>  [Press Enter or Esc to return to Data & backups]</Text>
+      </Box>
+    </Box>
+  );
+}
+
+function StaticSitesView({ ctx }: { ctx: Ctx }) {
+  const state = readState(ctx.home);
+  const sites = Object.entries(state.staticSites ?? {});
+
+  return (
+    <Box flexDirection="column" paddingY={0}>
+      <Box marginBottom={1}>
+        <Text color="cyan" bold>
+          Deployed Static & SSR Applications
+        </Text>
+      </Box>
+      {sites.length === 0 ? (
+        <Box flexDirection="column">
+          <Text dimColor>  No web applications deployed yet.</Text>
+          <Text dimColor>  Use 'Static & SSR apps › Deploy a site' to add Next.js, Vite, Nuxt, etc.</Text>
+        </Box>
+      ) : (
+        <Box flexDirection="column">
+          {sites.map(([name, info]) => {
+            return (
+              <Box key={name} flexDirection="column" marginBottom={1}>
+                <Box>
+                  <Text color="cyan">  ● </Text>
+                  <Text bold>{name.padEnd(20)}</Text>
+                  <Text color="green">{`http://localhost/${name}`}</Text>
+                </Box>
+                <Box paddingLeft={4}>
+                  <Text dimColor>{`Source: ${info.source}`}</Text>
+                </Box>
+              </Box>
+            );
+          })}
+        </Box>
+      )}
+      <Box marginTop={1}>
+        <Text dimColor>  [Press Enter or Esc to return to Static apps]</Text>
+      </Box>
+    </Box>
+  );
+}
+
+function HomeView({ ctx }: { ctx: Ctx }) {
+  return (
+    <Box flexDirection="column" paddingY={0}>
+      <Box marginBottom={1}>
+        <Text color="cyan" bold>
+          State Directory (PUBSERVICES_HOME)
+        </Text>
+      </Box>
+      <Box marginBottom={1}>
+        <Text bold>Path: </Text>
+        <Text color="cyan">{ctx.home}</Text>
+      </Box>
+      <Box flexDirection="column">
+        <Text dimColor>Managed Contents:</Text>
+        <Text dimColor>  • .env                  Active credentials and service ports</Text>
+        <Text dimColor>  • docker-compose.yml    Multi-container stack definition</Text>
+        <Text dimColor>  • nginx/                Proxy settings & web app sites</Text>
+        <Text dimColor>  • mysql/                Custom configuration overrides</Text>
+        <Text dimColor>  • backups/              Database dumps and snapshots</Text>
+        <Text dimColor>  • state.json            CLI state and static site registrations</Text>
+      </Box>
+      <Box marginTop={1}>
+        <Text dimColor>  [Press Enter or Esc to return to Configuration]</Text>
+      </Box>
+    </Box>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Interactive Live TUI Component                                    */
+/* ------------------------------------------------------------------ */
 
 function LiveInteractiveTui({ ctx, initialScreen, onResolve }: LiveInteractiveTuiProps) {
   const { exit } = useApp();
@@ -296,6 +548,21 @@ function LiveInteractiveTui({ ctx, initialScreen, onResolve }: LiveInteractiveTu
     setCursor(0);
   }, [screen]);
 
+  // Accurately resolve service status from live inspection
+  const getServiceStatus = useCallback(
+    (s: ServiceInfo): ContainerStatus => {
+      if (!data) return 'missing';
+      const row = data.services.find(
+        (r) =>
+          r.key === s.key ||
+          r.container === s.container ||
+          r.label.toLowerCase() === s.label.toLowerCase(),
+      );
+      return row?.status ?? 'stopped';
+    },
+    [data],
+  );
+
   // Execute an inline command without leaving the live TUI
   const runInlineAction = useCallback(
     async (title: string, progress: string, fn: () => Promise<string | void>) => {
@@ -339,8 +606,8 @@ function LiveInteractiveTui({ ctx, initialScreen, onResolve }: LiveInteractiveTu
 
   // Request external terminal handover
   const requestTerminalAction = useCallback(
-    (run: () => Promise<void>, pause: boolean, returnScreen: ScreenState) => {
-      onResolve({ type: 'terminal', run, pause, returnScreen });
+    (run: () => Promise<void>, returnScreen: ScreenState) => {
+      onResolve({ type: 'terminal', run, returnScreen });
       exit();
     },
     [onResolve, exit],
@@ -356,11 +623,7 @@ function LiveInteractiveTui({ ctx, initialScreen, onResolve }: LiveInteractiveTu
   let breadcrumb = 'Main Menu';
   let subtitle: string | undefined = 'Select an operation category:';
   let items: MenuItem[] = [];
-
-  const getServiceStatus = (containerName: string) => {
-    const row = data?.services.find((s) => s.label === containerName || s.key === containerName);
-    return row?.status ?? 'stopped';
-  };
+  let customView: React.ReactNode = null;
 
   switch (screen.type) {
     case 'root':
@@ -368,9 +631,9 @@ function LiveInteractiveTui({ ctx, initialScreen, onResolve }: LiveInteractiveTu
       subtitle = 'Select an operation category:';
       items = [
         { value: 'services', label: 'Services', hint: 'start · stop · restart · manage single' },
-        { value: 'monitor', label: 'Monitor', hint: 'status · connection info · logs · doctor' },
+        { value: 'monitor', label: 'Monitor', hint: 'connection info · health · logs · doctor' },
         { value: 'static', label: 'Static & SSR apps', hint: 'deploy · list · update · mount' },
-        { value: 'data', label: 'Data & backups', hint: 'backup · restore · reset' },
+        { value: 'data', label: 'Data & backups', hint: 'backup · list · restore · reset' },
         { value: 'config', label: 'Configuration & env', hint: '.env · custom.cnf · state dir' },
         { value: 'exit', label: 'Exit', hint: 'quit pubservices' },
       ];
@@ -397,7 +660,7 @@ function LiveInteractiveTui({ ctx, initialScreen, onResolve }: LiveInteractiveTu
       subtitle = 'Select a service to control:';
       items = [
         ...allServices.map((s) => {
-          const st = getServiceStatus(s.container);
+          const st = getServiceStatus(s);
           const isLive = st === 'healthy' || st === 'running';
           const isStarting = st === 'starting';
           return {
@@ -414,7 +677,7 @@ function LiveInteractiveTui({ ctx, initialScreen, onResolve }: LiveInteractiveTu
 
     case 'service_detail': {
       const svc = allServices.find((s) => s.key === screen.serviceKey) ?? allServices[0]!;
-      const st = getServiceStatus(svc.container);
+      const st = getServiceStatus(svc);
       const isRunning = st === 'healthy' || st === 'running' || st === 'starting';
       const isDatabase = svc.key === 'mysql' || svc.key === 'postgres' || svc.key === 'redis';
       const isNginx = svc.key === 'nginx';
@@ -473,12 +736,27 @@ function LiveInteractiveTui({ ctx, initialScreen, onResolve }: LiveInteractiveTu
       breadcrumb = 'Monitor';
       subtitle = 'Diagnostic & inspection tools:';
       items = [
-        { value: 'status', label: 'Status', hint: 'full service health table' },
-        { value: 'info', label: 'Connection info', hint: 'credentials and ports' },
+        { value: 'info', label: 'Connection info', hint: 'view credentials, hosts & ports' },
+        { value: 'status', label: 'Status overview', hint: 'stack health breakdown' },
+        { value: 'doctor', label: 'Doctor', hint: 'verify system environment & daemon' },
         { value: 'logs', label: 'Follow logs ›', hint: 'choose container to tail' },
-        { value: 'doctor', label: 'Doctor', hint: 'verify environment and ports' },
         { value: 'back', label: '← Back to main menu', isBack: true },
       ];
+      break;
+
+    case 'connection_info':
+      breadcrumb = 'Monitor › Connection info';
+      customView = <ConnectionInfoView ctx={ctx} />;
+      break;
+
+    case 'doctor_view':
+      breadcrumb = 'Monitor › Doctor';
+      customView = <DoctorView ctx={ctx} />;
+      break;
+
+    case 'status_view':
+      breadcrumb = 'Monitor › Status';
+      customView = <StatusView ctx={ctx} data={data} />;
       break;
 
     case 'logs_service_select':
@@ -508,26 +786,41 @@ function LiveInteractiveTui({ ctx, initialScreen, onResolve }: LiveInteractiveTu
       ];
       break;
 
+    case 'static_sites_view':
+      breadcrumb = 'Static & SSR apps › Deployed Sites';
+      customView = <StaticSitesView ctx={ctx} />;
+      break;
+
     case 'data':
       breadcrumb = 'Data & backups';
       subtitle = 'Database storage & backups:';
       items = [
         { value: 'backup', label: 'Create a backup', hint: 'dump all active databases' },
-        { value: 'backups', label: 'List backups', hint: 'show files in backups/' },
+        { value: 'backups', label: 'List backups', hint: 'show archive files in backups/' },
         { value: 'restore', label: 'Restore from a backup', hint: 'restore database dump' },
         { value: 'reset', label: 'Reset all data', hint: 'purge data directories' },
         { value: 'back', label: '← Back to main menu', isBack: true },
       ];
       break;
 
+    case 'backups_view':
+      breadcrumb = 'Data & backups › Archive List';
+      customView = <BackupsView ctx={ctx} />;
+      break;
+
     case 'config':
       breadcrumb = 'Configuration & environment';
-      subtitle = 'Edit configuration files:';
+      subtitle = 'Configuration & state paths:';
       items = [
         { value: 'edit', label: 'Edit .env', hint: 'open ~/.pubservices/.env in $EDITOR' },
-        { value: 'home', label: 'Show state directory', hint: 'print PUBSERVICES_HOME path' },
+        { value: 'home', label: 'Show state directory', hint: 'show PUBSERVICES_HOME layout' },
         { value: 'back', label: '← Back to main menu', isBack: true },
       ];
+      break;
+
+    case 'home_view':
+      breadcrumb = 'Configuration › State Directory';
+      customView = <HomeView ctx={ctx} />;
       break;
   }
 
@@ -654,7 +947,6 @@ function LiveInteractiveTui({ ctx, initialScreen, onResolve }: LiveInteractiveTu
           async () => {
             await execShellCommand(ctx, svc.key);
           },
-          false,
           screen,
         );
       } else if (selected.value === 'logs') {
@@ -662,7 +954,6 @@ function LiveInteractiveTui({ ctx, initialScreen, onResolve }: LiveInteractiveTu
           async () => {
             await logsCommand(ctx, svc.key, {});
           },
-          false,
           screen,
         );
       } else if (selected.value === 'config') {
@@ -674,7 +965,6 @@ function LiveInteractiveTui({ ctx, initialScreen, onResolve }: LiveInteractiveTu
             async () => {
               await editServiceConfig(ctx, svc.key, configs[0]?.path);
             },
-            false,
             screen,
           );
         }
@@ -688,39 +978,20 @@ function LiveInteractiveTui({ ctx, initialScreen, onResolve }: LiveInteractiveTu
         async () => {
           await editServiceConfig(ctx, svc.key, selected.value);
         },
-        false,
         screen,
       );
       return;
     }
 
     if (screen.type === 'monitor') {
-      if (selected.value === 'status') {
-        requestTerminalAction(
-          async () => {
-            await statusCommand(ctx);
-          },
-          true,
-          screen,
-        );
-      } else if (selected.value === 'info') {
-        requestTerminalAction(
-          async () => {
-            await infoCommand(ctx);
-          },
-          true,
-          screen,
-        );
+      if (selected.value === 'info') {
+        setScreen({ type: 'connection_info' });
+      } else if (selected.value === 'status') {
+        setScreen({ type: 'status_view' });
+      } else if (selected.value === 'doctor') {
+        setScreen({ type: 'doctor_view' });
       } else if (selected.value === 'logs') {
         setScreen({ type: 'logs_service_select' });
-      } else if (selected.value === 'doctor') {
-        requestTerminalAction(
-          async () => {
-            await doctorCommand(ctx);
-          },
-          true,
-          screen,
-        );
       }
       return;
     }
@@ -730,7 +1001,6 @@ function LiveInteractiveTui({ ctx, initialScreen, onResolve }: LiveInteractiveTu
         async () => {
           await logsCommand(ctx, selected.value, {});
         },
-        false,
         screen,
       );
       return;
@@ -738,19 +1008,12 @@ function LiveInteractiveTui({ ctx, initialScreen, onResolve }: LiveInteractiveTu
 
     if (screen.type === 'static') {
       if (selected.value === 'list') {
-        requestTerminalAction(
-          async () => {
-            await staticList(ctx);
-          },
-          true,
-          screen,
-        );
+        setScreen({ type: 'static_sites_view' });
       } else if (selected.value === 'add') {
         requestTerminalAction(
           async () => {
             await staticAdd(ctx, undefined, undefined);
           },
-          true,
           screen,
         );
       } else if (selected.value === 'update') {
@@ -763,7 +1026,6 @@ function LiveInteractiveTui({ ctx, initialScreen, onResolve }: LiveInteractiveTu
           async () => {
             await staticRemove(ctx, undefined);
           },
-          true,
           screen,
         );
       } else if (selected.value === 'mount') {
@@ -771,7 +1033,6 @@ function LiveInteractiveTui({ ctx, initialScreen, onResolve }: LiveInteractiveTu
           async () => {
             await staticMount(ctx, undefined);
           },
-          true,
           screen,
         );
       } else if (selected.value === 'unmount') {
@@ -779,7 +1040,6 @@ function LiveInteractiveTui({ ctx, initialScreen, onResolve }: LiveInteractiveTu
           async () => {
             await staticUnmount(ctx);
           },
-          true,
           screen,
         );
       }
@@ -793,19 +1053,12 @@ function LiveInteractiveTui({ ctx, initialScreen, onResolve }: LiveInteractiveTu
           return 'Backups completed successfully.';
         });
       } else if (selected.value === 'backups') {
-        requestTerminalAction(
-          async () => {
-            await backupsCommand(ctx);
-          },
-          true,
-          screen,
-        );
+        setScreen({ type: 'backups_view' });
       } else if (selected.value === 'restore') {
         requestTerminalAction(
           async () => {
             await restoreCommand(ctx, undefined);
           },
-          true,
           screen,
         );
       } else if (selected.value === 'reset') {
@@ -813,7 +1066,6 @@ function LiveInteractiveTui({ ctx, initialScreen, onResolve }: LiveInteractiveTu
           async () => {
             await resetCommand(ctx);
           },
-          true,
           screen,
         );
       }
@@ -826,16 +1078,48 @@ function LiveInteractiveTui({ ctx, initialScreen, onResolve }: LiveInteractiveTu
           async () => {
             await editCommand(ctx);
           },
-          false,
           screen,
         );
       } else if (selected.value === 'home') {
-        void runInlineAction('State directory', 'Checking state path...', async () => {
-          return `State directory: ${ctx.home}`;
-        });
+        setScreen({ type: 'home_view' });
       }
     }
   }, [items, cursor, screen, exitApp, runInlineAction, ctx, allServices, requestTerminalAction]);
+
+  // Back navigation helper
+  const goBack = useCallback(() => {
+    if (screen.type === 'root') {
+      exitApp();
+    } else if (
+      screen.type === 'services' ||
+      screen.type === 'monitor' ||
+      screen.type === 'static' ||
+      screen.type === 'data' ||
+      screen.type === 'config'
+    ) {
+      setScreen({ type: 'root' });
+    } else if (screen.type === 'service_list') {
+      setScreen({ type: 'services' });
+    } else if (screen.type === 'service_detail') {
+      setScreen({ type: 'service_list' });
+    } else if (screen.type === 'service_configs') {
+      setScreen({ type: 'service_detail', serviceKey: screen.serviceKey });
+    } else if (screen.type === 'logs_service_select') {
+      setScreen({ type: 'monitor' });
+    } else if (
+      screen.type === 'connection_info' ||
+      screen.type === 'doctor_view' ||
+      screen.type === 'status_view'
+    ) {
+      setScreen({ type: 'monitor' });
+    } else if (screen.type === 'static_sites_view') {
+      setScreen({ type: 'static' });
+    } else if (screen.type === 'backups_view') {
+      setScreen({ type: 'data' });
+    } else if (screen.type === 'home_view') {
+      setScreen({ type: 'config' });
+    }
+  }, [screen, exitApp]);
 
   // Input Handling
   useInput((input, key) => {
@@ -848,6 +1132,14 @@ function LiveInteractiveTui({ ctx, initialScreen, onResolve }: LiveInteractiveTu
       return;
     }
 
+    // In custom views (connection info, doctor, backups, etc.), any return key goes back
+    if (customView) {
+      if (key.return || key.escape || key.leftArrow || input === 'b' || input === 'q' || input === ' ') {
+        goBack();
+      }
+      return;
+    }
+
     if (key.upArrow || input === 'k') {
       setCursor((c) => (c - 1 + items.length) % items.length);
     } else if (key.downArrow || input === 'j') {
@@ -855,25 +1147,7 @@ function LiveInteractiveTui({ ctx, initialScreen, onResolve }: LiveInteractiveTu
     } else if (key.return || key.rightArrow) {
       selectCurrent();
     } else if (key.escape || key.leftArrow || input === 'b') {
-      if (screen.type === 'root') {
-        exitApp();
-      } else if (
-        screen.type === 'services' ||
-        screen.type === 'monitor' ||
-        screen.type === 'static' ||
-        screen.type === 'data' ||
-        screen.type === 'config'
-      ) {
-        setScreen({ type: 'root' });
-      } else if (screen.type === 'service_list') {
-        setScreen({ type: 'services' });
-      } else if (screen.type === 'service_detail') {
-        setScreen({ type: 'service_list' });
-      } else if (screen.type === 'service_configs') {
-        setScreen({ type: 'service_detail', serviceKey: screen.serviceKey });
-      } else if (screen.type === 'logs_service_select') {
-        setScreen({ type: 'monitor' });
-      }
+      goBack();
     } else if (input === 'q') {
       if (screen.type === 'root') {
         exitApp();
@@ -937,6 +1211,8 @@ function LiveInteractiveTui({ ctx, initialScreen, onResolve }: LiveInteractiveTu
               <Text dimColor>{'    [Press Enter or Esc to continue]'}</Text>
             </Box>
           </Box>
+        ) : customView ? (
+          customView
         ) : (
           <Box flexDirection="column">
             {subtitle ? (
@@ -1020,22 +1296,8 @@ export async function runLiveTui(ctx: Ctx): Promise<void> {
       }
     }
 
-    if (terminalReq.pause && process.stdin.isTTY) {
-      say.blank();
-      process.stdout.write(color.meta('  Press Enter to return to menu... '));
-      await new Promise<void>((resolve) => {
-        const onData = (d: Buffer) => {
-          const str = d.toString();
-          if (str.includes('\r') || str.includes('\n') || str.includes(' ')) {
-            process.stdin.off('data', onData);
-            process.stdin.setRawMode?.(false);
-            resolve();
-          }
-        };
-        process.stdin.setRawMode?.(true);
-        process.stdin.resume();
-        process.stdin.on('data', onData);
-      });
+    if (process.stdin.isTTY) {
+      process.stdin.resume();
     }
 
     currentScreen = terminalReq.returnScreen;

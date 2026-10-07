@@ -102,6 +102,7 @@ export const say = {
 
 export interface DashboardServiceRow {
   key: string;
+  container: string;
   label: string;
   status: ContainerStatus;
   uptime: string;

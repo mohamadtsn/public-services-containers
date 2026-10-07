@@ -33,6 +33,7 @@ export async function getDashboardData(ctx: Ctx): Promise<DashboardData> {
     const d = details.get(s.container);
     return {
       key: s.key,
+      container: s.container,
       label: s.label,
       status: d?.status ?? 'missing',
       uptime: d?.uptime ?? '—',
