@@ -17,10 +17,11 @@ import {
 } from './commands/static.js';
 import { statusCommand } from './commands/status.js';
 import type { Ctx } from './context.js';
+import { printDashboard } from './dashboard.js';
 import { inspectMany } from './docker.js';
 import { services } from './env.js';
 import { packageVersion } from './home.js';
-import { UserError, clearScreen, color, say, tildify } from './ui.js';
+import { UserError, clearScreen, color, say } from './ui.js';
 
 interface Action {
   value: string;
@@ -230,17 +231,6 @@ export const MENU_GROUPS: Group[] = [
           return false;
         },
       },
-      {
-        value: 'dash',
-        label: 'Live dashboard',
-        hint: 'takes over the terminal',
-        command: 'dash',
-        run: async (c) => {
-          const { runDash } = await import('./dash.js');
-          await runDash(c);
-          return true;
-        },
-      },
       { value: 'doctor', label: 'Doctor', hint: 'check the environment', command: 'doctor', run: (c) => doctorCommand(c) },
     ],
   },
@@ -306,13 +296,10 @@ export async function runMenu(ctx: Ctx): Promise<void> {
     );
   }
 
-  const renderHeader = () => {
-    clearScreen();
-    intro(`${color.brand(color.bold('pubservices'))} ${color.meta(`v${packageVersion()} · ${tildify(ctx.home)}`)}`);
-  };
-
   for (;;) {
-    renderHeader();
+    clearScreen();
+    await printDashboard(ctx);
+    say.blank();
 
     const group = await select({
       message: 'What do you want to do?',
@@ -331,7 +318,8 @@ export async function runMenu(ctx: Ctx): Promise<void> {
     if (!chosen) continue;
 
     for (;;) {
-      renderHeader();
+      clearScreen();
+      intro(`${color.brand(color.bold('pubservices'))} ${color.meta(`v${packageVersion()} · ${chosen.label}`)}`);
 
       const action = await select({
         message: chosen.label,
@@ -371,7 +359,7 @@ export async function runMenu(ctx: Ctx): Promise<void> {
         }
       }
 
-      if (selected.value !== 'single' && selected.value !== 'dash') {
+      if (selected.value !== 'single') {
         await pausePrompt();
       }
     }

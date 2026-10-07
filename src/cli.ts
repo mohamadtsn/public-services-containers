@@ -308,13 +308,16 @@ completionCmd
   .action((shell: string | undefined) => completionPrint(shell, specsFrom(program)));
 
 /**
- * No arguments: show status, then the menu when a terminal is attached.
+ * No arguments: run the interactive menu with pinned live dashboard on a terminal.
  * Piped or scripted invocations get the status output alone.
  */
 program.action(async () => {
   const ctx = context(globals());
-  await statusCommand(ctx);
-  if (process.stdin.isTTY && !ctx.json) await runMenu(ctx);
+  if (process.stdin.isTTY && !ctx.json) {
+    await runMenu(ctx);
+  } else {
+    await statusCommand(ctx);
+  }
 });
 
 async function main(): Promise<void> {

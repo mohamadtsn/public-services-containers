@@ -4,6 +4,7 @@
  */
 import { homedir } from 'node:os';
 import pc from 'picocolors';
+import type { ContainerStatus } from './docker.js';
 
 export const color = {
   brand: pc.cyan,
@@ -98,6 +99,124 @@ export const say = {
   meta: (m: string) => console.log(color.meta(m)),
   blank: () => console.log(''),
 };
+
+export interface DashboardServiceRow {
+  key: string;
+  label: string;
+  status: ContainerStatus;
+  uptime: string;
+  address: string;
+  ip: string;
+}
+
+export interface DashboardData {
+  version: string;
+  home: string;
+  docker: string | null;
+  compose: string | null;
+  network: string;
+  backupsCount: number;
+  backupsSize: string;
+  appsCount: number;
+  services: DashboardServiceRow[];
+}
+
+/**
+ * Renders the rich, aesthetic ASCII dashboard displayed at the CLI entry
+ * and pinned at the top of the interactive menu.
+ */
+export function renderDashboard(data: DashboardData): string {
+  const running = data.services.filter((s) => s.status === 'running' || s.status === 'healthy').length;
+  const healthy = data.services.filter((s) => s.status === 'healthy').length;
+  const stopped = data.services.filter((s) => s.status === 'stopped' || s.status === 'missing').length;
+
+  const colService = Math.max(14, ...data.services.map((s) => width(s.label)));
+  const colStatus = 12;
+  const colUptime = Math.max(7, ...data.services.map((s) => width(s.uptime)));
+  const colAddress = Math.max(24, ...data.services.map((s) => width(s.address)));
+  const colIp = Math.max(11, ...data.services.map((s) => width(s.ip)));
+
+  const tableHeader = [
+    pad('SERVICE', colService),
+    pad('STATUS', colStatus),
+    pad('UPTIME', colUptime),
+    pad('PORT / ADDRESS', colAddress),
+    pad('INTERNAL IP', colIp),
+  ].join('   ');
+
+  const contentWidth = width(tableHeader);
+
+  const left1 = `${color.meta('Stack')}    ${color.ok(symbol.on)} ${running} running${healthy > 0 ? ` (${healthy} healthy)` : ''}   ${color.meta(`${symbol.off} ${stopped} stopped`)}`;
+  const left2 = `${color.meta('Network')}  ${color.brand(data.network)}`;
+  const left3 = `${color.meta('Backups')}  ${data.backupsCount > 0 ? `${data.backupsCount} archives (${data.backupsSize})` : color.meta('none')}`;
+
+  const right1 = `${color.meta('Docker')}   ${data.docker ? `${data.docker}${data.compose ? color.meta(` · Compose v${data.compose}`) : ''}` : color.err('daemon offline')}`;
+  const right2 = `${color.meta('Home')}     ${color.meta(tildify(data.home))}`;
+  const right3 = `${color.meta('Apps')}     ${data.appsCount > 0 ? `${data.appsCount} deployed` : color.meta('none')}`;
+
+  const leftMax = Math.max(width(left1), width(left2), width(left3));
+  const rightMax = Math.max(width(right1), width(right2), width(right3));
+  const inner = Math.max(contentWidth, leftMax + 4 + rightMax) + 4;
+
+  const head = '─ PUBSERVICES ';
+  const tag = ` v${data.version} ─`;
+  const fill = '─'.repeat(Math.max(0, inner - width(head) - width(tag)));
+
+  const lines: string[] = [];
+  lines.push(color.brand(`╭${head}${fill}${tag}╮`));
+
+  const printLine = (content: string) => {
+    const gap = inner - width(content);
+    lines.push(`${color.brand('│')}${content}${' '.repeat(Math.max(0, gap))}${color.brand('│')}`);
+  };
+
+  const printSplit = (left: string, right: string) => {
+    printLine(`  ${pad(left, leftMax)}    ${right}`);
+  };
+
+  lines.push(`${color.brand('│')}${' '.repeat(inner)}${color.brand('│')}`);
+  printSplit(left1, right1);
+  printSplit(left2, right2);
+  printSplit(left3, right3);
+  lines.push(`${color.brand('│')}${' '.repeat(inner)}${color.brand('│')}`);
+
+  lines.push(color.brand(`├${'─'.repeat(inner)}┤`));
+  printLine(`  ${color.bold(color.meta(tableHeader))}  `);
+  lines.push(color.brand(`├${'─'.repeat(inner)}┤`));
+
+  for (const s of data.services) {
+    const isLive = s.status === 'running' || s.status === 'healthy';
+    const statusText =
+      s.status === 'healthy'
+        ? color.ok(`${symbol.on} healthy`)
+        : s.status === 'running'
+          ? color.ok(`${symbol.on} running`)
+          : s.status === 'starting'
+            ? color.warn(`${symbol.on} starting`)
+            : s.status === 'unhealthy'
+              ? color.err(`${symbol.on} unhealthy`)
+              : s.status === 'stopped'
+                ? color.warn(`${symbol.off} stopped`)
+                : color.meta(`${symbol.off} missing`);
+
+    const uptimeText = isLive ? color.meta(s.uptime) : color.meta('—');
+    const addressText = isLive ? color.brand(s.address) : color.meta(s.address);
+    const ipText = isLive && s.ip !== '—' ? color.meta(s.ip) : color.meta('—');
+
+    const rowStr = [
+      pad(color.bold(s.label), colService),
+      pad(statusText, colStatus),
+      pad(uptimeText, colUptime),
+      pad(addressText, colAddress),
+      pad(ipText, colIp),
+    ].join('   ');
+
+    printLine(`  ${rowStr}  `);
+  }
+
+  lines.push(color.brand(`╰${'─'.repeat(inner)}╯`));
+  return lines.join('\n');
+}
 
 /** Clears the terminal screen and scrollback buffer on interactive terminals. */
 export function clearScreen(): void {

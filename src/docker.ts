@@ -115,6 +115,72 @@ export async function inspectMany(names: string[]): Promise<Map<string, Containe
   return out;
 }
 
+export interface ContainerDetail {
+  status: ContainerStatus;
+  uptime: string;
+  ip: string;
+}
+
+/** Formats ISO StartedAt timestamp into a clean, human-readable uptime duration. */
+export function formatUptime(startedAt: string | undefined): string {
+  if (!startedAt) return '—';
+  const start = new Date(startedAt).getTime();
+  if (isNaN(start) || start <= 0) return '—';
+  const diffMs = Date.now() - start;
+  if (diffMs < 0) return '—';
+  const sec = Math.floor(diffMs / 1000);
+  if (sec < 60) return `${sec}s`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m`;
+  const hr = Math.floor(min / 60);
+  const remMin = min % 60;
+  if (hr < 24) return remMin > 0 ? `${hr}h ${remMin}m` : `${hr}h`;
+  const days = Math.floor(hr / 24);
+  const remHr = hr % 24;
+  return remHr > 0 ? `${days}d ${remHr}h` : `${days}d`;
+}
+
+/** Detailed inspect covering status, health, uptime and bridge network IP in a single process. */
+export async function inspectDetails(names: string[]): Promise<Map<string, ContainerDetail>> {
+  const out = new Map<string, ContainerDetail>(
+    names.map((n) => [n, { status: 'missing', uptime: '—', ip: '—' }]),
+  );
+  if (names.length === 0) return out;
+
+  const format =
+    '{{.Name}}\t{{.State.Status}}\t{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}\t{{.State.StartedAt}}\t{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}';
+  const res = await run('docker', ['inspect', '--format', format, ...names]);
+
+  for (const line of res.stdout.split('\n')) {
+    const parts = line.trim().split('\t');
+    if (parts.length < 2) continue;
+    const rawName = parts[0];
+    const state = parts[1];
+    const health = parts[2] ?? 'none';
+    const startedAt = parts[3];
+    const ip = parts[4] || '';
+    if (!rawName || !state) continue;
+    const name = rawName.replace(/^\//, '');
+    const status = classify(state, health);
+    const isLive = status === 'running' || status === 'healthy' || status === 'starting';
+    out.set(name, {
+      status,
+      uptime: isLive ? formatUptime(startedAt) : '—',
+      ip: isLive && ip ? ip : '—',
+    });
+  }
+  return out;
+}
+
+export async function composeVersion(): Promise<string | null> {
+  try {
+    const res = await run('docker', ['compose', 'version', '--short']);
+    return res.code === 0 ? res.stdout.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Containers whose bind mounts come from `prefix`. Used by `migrate` to refuse
  * copying a database out from under a running server.
