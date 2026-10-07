@@ -105,10 +105,10 @@ export const MENU_GROUPS: Group[] = [
   {
     value: 'static',
     label: 'Static sites',
-    hint: 'add · update · remove · mount',
+    hint: 'add · update · remove — auto-detects Next.js, Nuxt, Vite, CRA',
     actions: [
       { value: 'list', label: 'List sites', command: 'static list', run: (c) => staticList(c) },
-      { value: 'add', label: 'Add a site', command: 'static add', run: (c) => staticAdd(c, undefined, undefined) },
+      { value: 'add', label: 'Deploy a site', hint: 'smart detection', command: 'static add', run: (c) => staticAdd(c, undefined, undefined) },
       { value: 'update', label: 'Update all sites', command: 'static update', run: (c) => staticUpdate(c, undefined) },
       { value: 'remove', label: 'Remove a site', command: 'static remove', run: (c) => staticRemove(c, undefined) },
       { value: 'mount', label: 'Mount a host directory into Nginx', command: 'static mount', run: (c) => staticMount(c, undefined) },

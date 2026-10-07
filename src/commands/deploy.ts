@@ -1,0 +1,296 @@
+import { existsSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import type { ProjectInfo } from '../detect.js';
+import type { Ctx } from '../context.js';
+import { run } from '../docker.js';
+import { confirm } from '../prompt.js';
+import { type StaticSiteInfo, readState, updateState } from '../state.js';
+import { UserError, color, say } from '../ui.js';
+
+/* ------------------------------------------------------------------ */
+/*  Constants                                                         */
+/* ------------------------------------------------------------------ */
+
+const APPS_COMPOSE = 'docker-compose.apps.yml';
+const NETWORK_NAME = 'public-service-network';
+
+/* ------------------------------------------------------------------ */
+/*  Port allocation                                                   */
+/* ------------------------------------------------------------------ */
+
+/** Allocate the next available port and persist the counter. */
+export function allocatePort(home: string): number {
+  const state = readState(home);
+  const port = state.nextAppPort;
+  updateState(home, { nextAppPort: port + 1 });
+  return port;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Compose service generation                                        */
+/* ------------------------------------------------------------------ */
+
+interface ServiceDef {
+  image: string;
+  workingDir: string;
+  volumes: string[];
+  command: string[];
+  port: number;
+  env: Record<string, string>;
+}
+
+function serviceDefForProject(projectDir: string, info: ProjectInfo, port: number): ServiceDef {
+  const base: ServiceDef = {
+    image: 'node:20-alpine',
+    workingDir: '/app',
+    volumes: [],
+    command: [],
+    port,
+    env: { PORT: '3000', HOSTNAME: '0.0.0.0' },
+  };
+
+  switch (info.type) {
+    case 'nextjs':
+      if (info.nextOutputMode === 'standalone') {
+        return {
+          ...base,
+          volumes: [`${projectDir}:/app:ro`],
+          command: ['node', '.next/standalone/server.js'],
+        };
+      }
+      // default SSR — needs node_modules, runs next start
+      return {
+        ...base,
+        volumes: [`${projectDir}:/app:ro`],
+        command: ['node_modules/.bin/next', 'start'],
+      };
+
+    case 'nuxt':
+      // Nuxt SSR — .output is self-contained
+      return {
+        ...base,
+        volumes: [`${join(projectDir, '.output')}:/app:ro`],
+        command: ['node', 'server/index.mjs'],
+        env: { ...base.env, NITRO_PORT: '3000', NITRO_HOST: '0.0.0.0' },
+      };
+
+    default:
+      // Fallback: try `npm start` with the whole project mounted
+      return {
+        ...base,
+        volumes: [`${projectDir}:/app:ro`],
+        command: ['npm', 'start'],
+      };
+  }
+}
+
+function indent(level: number): string {
+  return ' '.repeat(level);
+}
+
+function serviceToYaml(name: string, def: ServiceDef): string {
+  const lines: string[] = [];
+  lines.push(`${indent(2)}${name}:`);
+  lines.push(`${indent(4)}image: ${def.image}`);
+  lines.push(`${indent(4)}working_dir: ${def.workingDir}`);
+  lines.push(`${indent(4)}restart: unless-stopped`);
+
+  lines.push(`${indent(4)}volumes:`);
+  for (const v of def.volumes) {
+    lines.push(`${indent(6)}- '${v}'`);
+  }
+
+  lines.push(`${indent(4)}command: [${def.command.map((c) => `'${c}'`).join(', ')}]`);
+
+  lines.push(`${indent(4)}ports:`);
+  lines.push(`${indent(6)}- '${def.port}:3000'`);
+
+  if (Object.keys(def.env).length > 0) {
+    lines.push(`${indent(4)}environment:`);
+    for (const [k, v] of Object.entries(def.env)) {
+      lines.push(`${indent(6)}${k}: '${v}'`);
+    }
+  }
+
+  lines.push(`${indent(4)}networks:`);
+  lines.push(`${indent(6)}- ${NETWORK_NAME}`);
+
+  return lines.join('\n');
+}
+
+/* ------------------------------------------------------------------ */
+/*  Compose file management                                           */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Regenerates `docker-compose.apps.yml` from the current state.
+ * Each SSR site becomes a compose service. The file is rebuilt entirely
+ * every time so there is no need to parse YAML.
+ */
+export function regenerateAppsCompose(ctx: Ctx): void {
+  const state = readState(ctx.home);
+  const ssrSites = Object.entries(state.staticSites).filter(
+    ([, info]) => info.deployMode === 'ssr' && info.port,
+  );
+
+  const composePath = join(ctx.home, APPS_COMPOSE);
+
+  if (ssrSites.length === 0) {
+    // No SSR sites left — remove the compose file if it exists.
+    rmSync(composePath, { force: true });
+    return;
+  }
+
+  const services: string[] = [];
+  for (const [name, siteInfo] of ssrSites) {
+    const info = siteInfoToProjectInfo(siteInfo);
+    const def = serviceDefForProject(siteInfo.source, info, siteInfo.port!);
+    services.push(serviceToYaml(name, def));
+  }
+
+  const content = [
+    '# Auto-generated by pubservices — do not edit manually.',
+    '# Regenerated on every static add/update/remove for SSR sites.',
+    '',
+    'services:',
+    ...services,
+    '',
+    'networks:',
+    `${indent(2)}${NETWORK_NAME}:`,
+    `${indent(4)}external: true`,
+    '',
+  ].join('\n');
+
+  writeFileSync(composePath, content);
+}
+
+/** Maps a StaticSiteInfo back to a minimal ProjectInfo for compose generation. */
+function siteInfoToProjectInfo(info: StaticSiteInfo): ProjectInfo {
+  return {
+    type: info.type,
+    deployMode: info.deployMode,
+    outputDir: '',
+    outputExists: true,
+    label: '',
+    packageManager: 'npm',
+    nextOutputMode: info.type === 'nextjs' ? (info.outputMode as ProjectInfo['nextOutputMode']) : undefined,
+    nuxtOutputMode: info.type === 'nuxt' ? (info.outputMode as ProjectInfo['nuxtOutputMode']) : undefined,
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/*  Compose helpers                                                   */
+/* ------------------------------------------------------------------ */
+
+function appsCompose(home: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
+  const composePath = join(home, APPS_COMPOSE);
+  if (!existsSync(composePath)) {
+    throw new UserError(
+      `${APPS_COMPOSE} not found.`,
+      'No SSR apps are deployed.',
+    );
+  }
+  return run('docker', ['compose', '-p', 'psvc-apps', '-f', composePath, ...args]);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Public API                                                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Deploy an SSR site: allocate a port, save to state, generate the compose
+ * file, and start the container.
+ */
+export async function deploySsr(
+  ctx: Ctx,
+  name: string,
+  projectDir: string,
+  info: ProjectInfo,
+): Promise<void> {
+  const port = allocatePort(ctx.home);
+
+  // Save to state.
+  const state = readState(ctx.home);
+  const sites = { ...state.staticSites };
+  sites[name] = {
+    source: projectDir,
+    type: info.type,
+    deployMode: 'ssr',
+    outputMode: info.nextOutputMode ?? info.nuxtOutputMode,
+    port,
+  };
+  updateState(ctx.home, { staticSites: sites });
+
+  // Regenerate compose and start.
+  regenerateAppsCompose(ctx);
+
+  say.step(`Starting ${name} container on port ${port}...`);
+  const res = await appsCompose(ctx.home, ['up', '-d', name]);
+  if (res.code !== 0) {
+    throw new UserError(
+      `Failed to start ${name}.`,
+      (res.stderr || res.stdout).trim(),
+    );
+  }
+
+  const devproxyType = info.type === 'nextjs' ? 'nextjs' : info.type === 'nuxt' ? 'nuxt' : 'default';
+  const devproxyArgs = ['create', '-h', `${name}.local`, '-p', String(port), '--type', devproxyType];
+  const devproxyCmd = `devproxy ${devproxyArgs.join(' ')}`;
+
+  say.blank();
+  say.ok(`Deployed ${name} (${info.label})`);
+  say.meta(`  container  psvc-apps-${name}-1`);
+  say.meta(`  port       http://localhost:${port}`);
+  say.blank();
+  say.meta('  Create local domain with devproxy:');
+  console.log(`  ${color.brand(devproxyCmd)}`);
+  say.blank();
+
+  const hasDevproxy = (await run('which', ['devproxy']).catch(() => null))?.code === 0;
+  if (hasDevproxy && !ctx.yes && process.stdin.isTTY) {
+    const shouldRun = await confirm(
+      ctx,
+      `Execute devproxy now to create domain http://${name}.local?`,
+      true,
+    );
+    if (shouldRun) {
+      say.step(`Running: ${devproxyCmd}`);
+      await run('devproxy', devproxyArgs, { stdio: 'inherit' });
+    }
+  }
+}
+
+/** Stop and remove an SSR site's container and clean up compose entries. */
+export async function removeSsr(ctx: Ctx, name: string): Promise<void> {
+  const composePath = join(ctx.home, APPS_COMPOSE);
+
+  // Stop the container if the compose file still exists.
+  if (existsSync(composePath)) {
+    say.step(`Stopping ${name} container...`);
+    await appsCompose(ctx.home, ['rm', '-sf', name]).catch(() => {});
+  }
+
+  // Remove from state.
+  const state = readState(ctx.home);
+  const sites = { ...state.staticSites };
+  delete sites[name];
+  updateState(ctx.home, { staticSites: sites });
+
+  // Regenerate compose (will remove file if no SSR sites remain).
+  regenerateAppsCompose(ctx);
+}
+
+/** Restart an SSR site's container (e.g. after a rebuild). */
+export async function restartSsr(ctx: Ctx, name: string): Promise<void> {
+  regenerateAppsCompose(ctx);
+
+  say.step(`Restarting ${name} container...`);
+  const res = await appsCompose(ctx.home, ['up', '-d', '--force-recreate', name]);
+  if (res.code !== 0) {
+    throw new UserError(
+      `Failed to restart ${name}.`,
+      (res.stderr || res.stdout).trim(),
+    );
+  }
+  say.ok(`Restarted ${name}`);
+}

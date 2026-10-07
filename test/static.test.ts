@@ -11,7 +11,7 @@ import {
   staticUpdate,
 } from '../src/commands/static.js';
 import { type Ctx, context } from '../src/context.js';
-import { readState } from '../src/state.js';
+import { readState, updateState } from '../src/state.js';
 import { UserError } from '../src/ui.js';
 
 describe('static sites', () => {
@@ -144,4 +144,120 @@ describe('static sites', () => {
   it('refuses to mount a directory that does not exist', async () => {
     await expect(staticMount(ctx, join(src, 'nope'))).rejects.toThrow(UserError);
   });
+
+  it('detects a Vite project and syncs its dist/ output', async () => {
+    const viteDir = tempDir('pubservices-vite-');
+    writeFileSync(join(viteDir, 'vite.config.ts'), 'export default {}');
+    mkdirSync(join(viteDir, 'dist'), { recursive: true });
+    writeFileSync(join(viteDir, 'dist', 'index.html'), '<html>vite</html>');
+
+    await staticAdd(ctx, 'viteapp', viteDir);
+
+    expect(readFileSync(join(sitePath('viteapp'), 'index.html'), 'utf8')).toBe('<html>vite</html>');
+
+    const state = readState(dir);
+    expect(state.staticSites['viteapp']).toBeDefined();
+    expect(state.staticSites['viteapp']?.type).toBe('vite');
+    expect(state.staticSites['viteapp']?.deployMode).toBe('static');
+  });
+
+  it('detects a Next.js export project and syncs its out/ output', async () => {
+    const nextDir = tempDir('pubservices-next-');
+    writeFileSync(join(nextDir, 'next.config.mjs'), 'export default { output: "export" }');
+    mkdirSync(join(nextDir, 'out'), { recursive: true });
+    writeFileSync(join(nextDir, 'out', 'index.html'), '<html>next</html>');
+
+    await staticAdd(ctx, 'nextapp', nextDir);
+
+    expect(readFileSync(join(sitePath('nextapp'), 'index.html'), 'utf8')).toBe('<html>next</html>');
+
+    const state = readState(dir);
+    expect(state.staticSites['nextapp']).toBeDefined();
+    expect(state.staticSites['nextapp']?.type).toBe('nextjs');
+    expect(state.staticSites['nextapp']?.deployMode).toBe('static');
+  });
+
+  it('falls back to direct sync for plain build output directories', async () => {
+    const plainDir = tempDir('pubservices-plain-');
+    writeFileSync(join(plainDir, 'index.html'), '<html>plain</html>');
+    writeFileSync(join(plainDir, 'app.js'), 'console.log("plain")');
+
+    await staticAdd(ctx, 'plain', plainDir);
+
+    expect(readFileSync(join(sitePath('plain'), 'index.html'), 'utf8')).toBe('<html>plain</html>');
+    expect(readFileSync(join(sitePath('plain'), 'app.js'), 'utf8')).toBe('console.log("plain")');
+
+    const state = readState(dir);
+    expect(state.staticSites['plain']?.type).toBe('static');
+  });
+
+  it('saves framework metadata in staticSites state', async () => {
+    const viteDir = tempDir('pubservices-vitemeta-');
+    writeFileSync(join(viteDir, 'vite.config.ts'), 'export default {}');
+    mkdirSync(join(viteDir, 'dist'), { recursive: true });
+    writeFileSync(join(viteDir, 'dist', 'index.html'), '<html>meta</html>');
+
+    await staticAdd(ctx, 'viteapp', viteDir);
+
+    const info = readState(dir).staticSites['viteapp'];
+    expect(info).toBeDefined();
+    expect(info?.source).toBe(viteDir);
+    expect(info?.type).toBe('vite');
+    expect(info?.deployMode).toBe('static');
+  });
+
+  it('--no-build flag prevents build attempt', async () => {
+    const viteDir = tempDir('pubservices-nobuild-');
+    writeFileSync(join(viteDir, 'vite.config.ts'), 'export default {}');
+    // No dist/ directory — output doesn't exist.
+
+    await expect(staticAdd(ctx, 'nobuilt', viteDir, { noBuild: true })).rejects.toThrow(UserError);
+  });
+
+  it('detects a Nuxt static project and syncs .output/public', async () => {
+    const nuxtDir = tempDir('pubservices-nuxt-');
+    writeFileSync(join(nuxtDir, 'nuxt.config.ts'), 'export default { ssr: false }');
+    mkdirSync(join(nuxtDir, '.output', 'public'), { recursive: true });
+    writeFileSync(join(nuxtDir, '.output', 'public', 'index.html'), '<html>nuxt-static</html>');
+
+    await staticAdd(ctx, 'nuxtapp', nuxtDir);
+
+    expect(readFileSync(join(sitePath('nuxtapp'), 'index.html'), 'utf8')).toBe('<html>nuxt-static</html>');
+
+    const state = readState(dir);
+    expect(state.staticSites['nuxtapp']).toBeDefined();
+    expect(state.staticSites['nuxtapp']?.type).toBe('nuxt');
+    expect(state.staticSites['nuxtapp']?.deployMode).toBe('static');
+  });
+
+  it('lists SSR sites and static sites together in json mode', () => {
+    updateState(dir, {
+      staticSites: {
+        ssrapp: {
+          source: '/path/to/ssr',
+          type: 'nextjs',
+          deployMode: 'ssr',
+          outputMode: 'standalone',
+          port: 48001,
+        },
+      },
+    });
+
+    const chunks: string[] = [];
+    const spy = vi.spyOn(console, 'log').mockImplementation((...a: unknown[]) => {
+      chunks.push(a.map(String).join(' '));
+    });
+    staticList(context({ home: dir, json: true, yes: true }));
+    spy.mockRestore();
+
+    const parsed = JSON.parse(chunks.join('\n')) as {
+      sites: Array<{ name: string; deployMode: string; type: string; port: number | null }>;
+    };
+    const ssrSite = parsed.sites.find((s) => s.name === 'ssrapp');
+    expect(ssrSite).toBeDefined();
+    expect(ssrSite?.deployMode).toBe('ssr');
+    expect(ssrSite?.type).toBe('nextjs');
+    expect(ssrSite?.port).toBe(48001);
+  });
 });
+
