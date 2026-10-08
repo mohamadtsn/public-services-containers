@@ -1,4 +1,5 @@
 import { Box, Text, render, useApp, useInput } from 'ink';
+import * as readline from 'node:readline';
 import { useCallback, useEffect, useState } from 'react';
 import { backupCommand, listBackups } from './commands/backup.js';
 import { type Check, runDoctorChecks } from './commands/doctor.js';
@@ -19,6 +20,7 @@ import {
   serviceConfigFiles,
 } from './commands/shell.js';
 import {
+  getSiteSummaries,
   staticAdd,
   staticMount,
   staticRemove,
@@ -31,12 +33,12 @@ import { type ContainerStatus, compose, inspectMany } from './docker.js';
 import { type ServiceInfo, services } from './env.js';
 import { packageVersion } from './home.js';
 import { profilesForUp } from './profiles.js';
-import { readState } from './state.js';
 import {
   DASHBOARD_BOX_WIDTH,
   type DashboardData,
   UserError,
   clearScreen,
+  color,
   renderDashboard,
   say,
   tildify,
@@ -236,6 +238,7 @@ export interface MenuItem {
 interface TerminalRequest {
   type: 'terminal';
   run: () => Promise<void>;
+  pause: boolean;
   returnScreen: ScreenState;
 }
 
@@ -304,8 +307,14 @@ function ConnectionInfoView({ ctx }: { ctx: Ctx }) {
         <Text>{`  MinIO UI:    http://localhost:${e.MINIO_CONSOLE_PORT} (API: :${e.MINIO_API_PORT})`}</Text>
       </Box>
 
-      <Box marginTop={1}>
-        <Text dimColor>  [Press Enter or Esc to return to Monitor]</Text>
+      <Box marginTop={1} flexDirection="column">
+        <Box>
+          <Text color="cyan">  ● </Text>
+          <Text bold color="cyan">
+            ← Back to Monitor
+          </Text>
+        </Box>
+        <Text dimColor>    [Press Esc, b, or Enter to return]</Text>
       </Box>
     </Box>
   );
@@ -339,26 +348,34 @@ function DoctorView({ ctx }: { ctx: Ctx }) {
           Environment Diagnostics (Doctor)
         </Text>
       </Box>
-      {checks.map((c, i) => {
-        const mark = c.level === 'ok' ? '✔' : c.level === 'warn' ? '⚠' : '✖';
-        const colorName = c.level === 'ok' ? 'green' : c.level === 'warn' ? 'yellow' : 'red';
-        return (
-          <Box key={i} flexDirection="column" marginBottom={c.hint ? 1 : 0}>
-            <Box>
-              <Text color={colorName}>{`  ${mark} `}</Text>
-              <Text bold>{c.name.padEnd(18)}</Text>
-              <Text>{c.detail}</Text>
-            </Box>
-            {c.hint ? (
-              <Box paddingLeft={4}>
-                <Text dimColor>{`Hint: ${c.hint}`}</Text>
+      <Box flexDirection="column" marginBottom={1}>
+        {checks.map((c, i) => {
+          const mark = c.level === 'ok' ? '✔' : c.level === 'warn' ? '⚠' : '✖';
+          const colorName = c.level === 'ok' ? 'green' : c.level === 'warn' ? 'yellow' : 'red';
+          return (
+            <Box key={i} flexDirection="column" marginBottom={c.hint ? 1 : 0}>
+              <Box>
+                <Text color={colorName}>{`  ${mark} `}</Text>
+                <Text bold>{c.name.padEnd(18)}</Text>
+                <Text>{c.detail}</Text>
               </Box>
-            ) : null}
-          </Box>
-        );
-      })}
-      <Box marginTop={1}>
-        <Text dimColor>  [Press Enter or Esc to return to Monitor]</Text>
+              {c.hint ? (
+                <Box paddingLeft={4}>
+                  <Text dimColor>{`Hint: ${c.hint}`}</Text>
+                </Box>
+              ) : null}
+            </Box>
+          );
+        })}
+      </Box>
+      <Box marginTop={1} flexDirection="column">
+        <Box>
+          <Text color="cyan">  ● </Text>
+          <Text bold color="cyan">
+            ← Back to Monitor
+          </Text>
+        </Box>
+        <Text dimColor>    [Press Esc, b, or Enter to return]</Text>
       </Box>
     </Box>
   );
@@ -378,13 +395,19 @@ function StatusView({ ctx, data }: { ctx: Ctx; data: DashboardData | null }) {
       <Box marginBottom={1}>
         <Text>  Live status is continually updating in the dashboard table above.</Text>
       </Box>
-      <Box flexDirection="column">
+      <Box flexDirection="column" marginBottom={1}>
         <Text>{`  • Active containers: ${running} running · ${stopped} stopped`}</Text>
         <Text>{`  • Docker network:    ${ctx.env.NETWORK_NAME || 'public-service-network'}`}</Text>
         <Text>{`  • State directory:   ${tildify(ctx.home)}`}</Text>
       </Box>
-      <Box marginTop={1}>
-        <Text dimColor>  [Press Enter or Esc to return to Monitor]</Text>
+      <Box marginTop={1} flexDirection="column">
+        <Box>
+          <Text color="cyan">  ● </Text>
+          <Text bold color="cyan">
+            ← Back to Monitor
+          </Text>
+        </Box>
+        <Text dimColor>    [Press Esc, b, or Enter to return]</Text>
       </Box>
     </Box>
   );
@@ -397,73 +420,95 @@ function BackupsView({ ctx }: { ctx: Ctx }) {
     <Box flexDirection="column" paddingY={0}>
       <Box marginBottom={1}>
         <Text color="cyan" bold>
-          Database Backup Archives
+          {`Database Backup Archives (${backups.length})`}
         </Text>
       </Box>
       {backups.length === 0 ? (
-        <Box flexDirection="column">
+        <Box flexDirection="column" marginBottom={1}>
           <Text dimColor>  No backup files found in backups/ directory.</Text>
           <Text dimColor>  Use 'Data & backups › Create a backup' to dump databases.</Text>
         </Box>
       ) : (
-        <Box flexDirection="column">
+        <Box flexDirection="column" marginBottom={1}>
           {backups.map((b, i) => {
             const sizeMb = (b.size / 1_048_576).toFixed(1);
             const dateStr = new Date(b.mtime).toLocaleString();
             return (
               <Box key={i}>
-                <Text color="cyan">  ● </Text>
-                <Text bold>{b.file.padEnd(30)}</Text>
-                <Text color="yellow">{`${sizeMb} MB`.padEnd(10)}</Text>
+                <Text color="green">  ● </Text>
+                <Text bold>{b.file.padEnd(36)}</Text>
+                <Text color="yellow">{`${sizeMb} MB`.padEnd(12)}</Text>
                 <Text dimColor>{dateStr}</Text>
               </Box>
             );
           })}
         </Box>
       )}
-      <Box marginTop={1}>
-        <Text dimColor>  [Press Enter or Esc to return to Data & backups]</Text>
+      <Box marginTop={1} flexDirection="column">
+        <Box>
+          <Text color="cyan">  ● </Text>
+          <Text bold color="cyan">
+            ← Back to Data & backups
+          </Text>
+        </Box>
+        <Text dimColor>    [Press Esc, b, or Enter to return]</Text>
       </Box>
     </Box>
   );
 }
 
 function StaticSitesView({ ctx }: { ctx: Ctx }) {
-  const state = readState(ctx.home);
-  const sites = Object.entries(state.staticSites ?? {});
+  const sites = getSiteSummaries(ctx);
 
   return (
     <Box flexDirection="column" paddingY={0}>
       <Box marginBottom={1}>
         <Text color="cyan" bold>
-          Deployed Static & SSR Applications
+          {`Deployed Static & SSR Applications (${sites.length})`}
         </Text>
       </Box>
       {sites.length === 0 ? (
-        <Box flexDirection="column">
+        <Box flexDirection="column" marginBottom={1}>
           <Text dimColor>  No web applications deployed yet.</Text>
-          <Text dimColor>  Use 'Static & SSR apps › Deploy a site' to add Next.js, Vite, Nuxt, etc.</Text>
+          <Text dimColor>  Use 'Deploy a site' or 'pubservices static add' to add Next.js, Vite, Nuxt, etc.</Text>
         </Box>
       ) : (
-        <Box flexDirection="column">
-          {sites.map(([name, info]) => {
+        <Box flexDirection="column" marginBottom={1}>
+          {sites.map((s) => {
+            const isSsr = s.deployMode === 'ssr';
+            const size =
+              s.bytes >= 1_048_576
+                ? `${(s.bytes / 1_048_576).toFixed(1)} MB`
+                : `${(s.bytes / 1024).toFixed(0)} KB`;
+            const badge = isSsr ? `SSR · :${s.port ?? '—'}` : `${s.files} files · ${size}`;
+            const url = isSsr ? `http://localhost:${s.port ?? ''}` : `http://localhost/${s.name}`;
+
             return (
-              <Box key={name} flexDirection="column" marginBottom={1}>
+              <Box key={s.name} flexDirection="column" marginBottom={1}>
                 <Box>
-                  <Text color="cyan">  ● </Text>
-                  <Text bold>{name.padEnd(20)}</Text>
-                  <Text color="green">{`http://localhost/${name}`}</Text>
+                  <Text color="green">  ● </Text>
+                  <Text bold>{s.name.padEnd(22)}</Text>
+                  <Text color="cyan">{badge.padEnd(24)}</Text>
+                  <Text>{url}</Text>
                 </Box>
-                <Box paddingLeft={4}>
-                  <Text dimColor>{`Source: ${info.source}`}</Text>
-                </Box>
+                {s.source ? (
+                  <Box paddingLeft={4}>
+                    <Text dimColor>{`Source: ${s.source}`}</Text>
+                  </Box>
+                ) : null}
               </Box>
             );
           })}
         </Box>
       )}
-      <Box marginTop={1}>
-        <Text dimColor>  [Press Enter or Esc to return to Static apps]</Text>
+      <Box marginTop={1} flexDirection="column">
+        <Box>
+          <Text color="cyan">  ● </Text>
+          <Text bold color="cyan">
+            ← Back to Static & SSR apps
+          </Text>
+        </Box>
+        <Text dimColor>    [Press Esc, b, or Enter to return]</Text>
       </Box>
     </Box>
   );
@@ -481,7 +526,7 @@ function HomeView({ ctx }: { ctx: Ctx }) {
         <Text bold>Path: </Text>
         <Text color="cyan">{ctx.home}</Text>
       </Box>
-      <Box flexDirection="column">
+      <Box flexDirection="column" marginBottom={1}>
         <Text dimColor>Managed Contents:</Text>
         <Text dimColor>  • .env                  Active credentials and service ports</Text>
         <Text dimColor>  • docker-compose.yml    Multi-container stack definition</Text>
@@ -490,8 +535,14 @@ function HomeView({ ctx }: { ctx: Ctx }) {
         <Text dimColor>  • backups/              Database dumps and snapshots</Text>
         <Text dimColor>  • state.json            CLI state and static site registrations</Text>
       </Box>
-      <Box marginTop={1}>
-        <Text dimColor>  [Press Enter or Esc to return to Configuration]</Text>
+      <Box marginTop={1} flexDirection="column">
+        <Box>
+          <Text color="cyan">  ● </Text>
+          <Text bold color="cyan">
+            ← Back to Configuration
+          </Text>
+        </Box>
+        <Text dimColor>    [Press Esc, b, or Enter to return]</Text>
       </Box>
     </Box>
   );
@@ -509,6 +560,7 @@ function LiveInteractiveTui({ ctx, initialScreen, onResolve }: LiveInteractiveTu
   const [screen, setScreen] = useState<ScreenState>(initialScreen);
   const [cursor, setCursor] = useState(0);
   const [columns, setColumns] = useState(() => (process.stdout.isTTY ? process.stdout.columns || 80 : 80));
+  const [screenMountedAt, setScreenMountedAt] = useState(() => Date.now());
 
   const [executing, setExecuting] = useState<{ title: string; progress: string } | null>(null);
   const [actionResult, setActionResult] = useState<{
@@ -543,9 +595,10 @@ function LiveInteractiveTui({ ctx, initialScreen, onResolve }: LiveInteractiveTu
     return () => clearInterval(timer);
   }, [refresh]);
 
-  // Reset cursor whenever screen changes
+  // Reset cursor and record timestamp whenever screen changes
   useEffect(() => {
     setCursor(0);
+    setScreenMountedAt(Date.now());
   }, [screen]);
 
   // Accurately resolve service status from live inspection
@@ -606,8 +659,8 @@ function LiveInteractiveTui({ ctx, initialScreen, onResolve }: LiveInteractiveTu
 
   // Request external terminal handover
   const requestTerminalAction = useCallback(
-    (run: () => Promise<void>, returnScreen: ScreenState) => {
-      onResolve({ type: 'terminal', run, returnScreen });
+    (run: () => Promise<void>, pause: boolean, returnScreen: ScreenState) => {
+      onResolve({ type: 'terminal', run, pause, returnScreen });
       exit();
     },
     [onResolve, exit],
@@ -887,7 +940,7 @@ function LiveInteractiveTui({ ctx, initialScreen, onResolve }: LiveInteractiveTu
         });
       } else if (selected.value === 'down') {
         void runInlineAction('Stop all', 'Stopping services (data preserved)...', async () => {
-          await downCommand(ctx, undefined, {});
+          await downCommand({ ...ctx, yes: true }, undefined, {});
           return 'All services stopped.';
         });
       } else if (selected.value === 'reload') {
@@ -924,7 +977,7 @@ function LiveInteractiveTui({ ctx, initialScreen, onResolve }: LiveInteractiveTu
         });
       } else if (selected.value === 'down') {
         void runInlineAction(`Stop ${svc.label}`, `Stopping ${svc.container}...`, async () => {
-          await downCommand(ctx, svc.key, {});
+          await downCommand({ ...ctx, yes: true }, svc.key, {});
           return `${svc.label} stopped.`;
         });
       } else if (selected.value === 'backup') {
@@ -947,6 +1000,7 @@ function LiveInteractiveTui({ ctx, initialScreen, onResolve }: LiveInteractiveTu
           async () => {
             await execShellCommand(ctx, svc.key);
           },
+          false,
           screen,
         );
       } else if (selected.value === 'logs') {
@@ -954,6 +1008,7 @@ function LiveInteractiveTui({ ctx, initialScreen, onResolve }: LiveInteractiveTu
           async () => {
             await logsCommand(ctx, svc.key, {});
           },
+          false,
           screen,
         );
       } else if (selected.value === 'config') {
@@ -965,6 +1020,7 @@ function LiveInteractiveTui({ ctx, initialScreen, onResolve }: LiveInteractiveTu
             async () => {
               await editServiceConfig(ctx, svc.key, configs[0]?.path);
             },
+            false,
             screen,
           );
         }
@@ -978,6 +1034,7 @@ function LiveInteractiveTui({ ctx, initialScreen, onResolve }: LiveInteractiveTu
         async () => {
           await editServiceConfig(ctx, svc.key, selected.value);
         },
+        false,
         screen,
       );
       return;
@@ -1001,6 +1058,7 @@ function LiveInteractiveTui({ ctx, initialScreen, onResolve }: LiveInteractiveTu
         async () => {
           await logsCommand(ctx, selected.value, {});
         },
+        false,
         screen,
       );
       return;
@@ -1014,6 +1072,7 @@ function LiveInteractiveTui({ ctx, initialScreen, onResolve }: LiveInteractiveTu
           async () => {
             await staticAdd(ctx, undefined, undefined);
           },
+          true,
           screen,
         );
       } else if (selected.value === 'update') {
@@ -1026,6 +1085,7 @@ function LiveInteractiveTui({ ctx, initialScreen, onResolve }: LiveInteractiveTu
           async () => {
             await staticRemove(ctx, undefined);
           },
+          true,
           screen,
         );
       } else if (selected.value === 'mount') {
@@ -1033,6 +1093,7 @@ function LiveInteractiveTui({ ctx, initialScreen, onResolve }: LiveInteractiveTu
           async () => {
             await staticMount(ctx, undefined);
           },
+          true,
           screen,
         );
       } else if (selected.value === 'unmount') {
@@ -1040,6 +1101,7 @@ function LiveInteractiveTui({ ctx, initialScreen, onResolve }: LiveInteractiveTu
           async () => {
             await staticUnmount(ctx);
           },
+          true,
           screen,
         );
       }
@@ -1059,6 +1121,7 @@ function LiveInteractiveTui({ ctx, initialScreen, onResolve }: LiveInteractiveTu
           async () => {
             await restoreCommand(ctx, undefined);
           },
+          true,
           screen,
         );
       } else if (selected.value === 'reset') {
@@ -1066,6 +1129,7 @@ function LiveInteractiveTui({ ctx, initialScreen, onResolve }: LiveInteractiveTu
           async () => {
             await resetCommand(ctx);
           },
+          true,
           screen,
         );
       }
@@ -1078,6 +1142,7 @@ function LiveInteractiveTui({ ctx, initialScreen, onResolve }: LiveInteractiveTu
           async () => {
             await editCommand(ctx);
           },
+          false,
           screen,
         );
       } else if (selected.value === 'home') {
@@ -1132,10 +1197,18 @@ function LiveInteractiveTui({ ctx, initialScreen, onResolve }: LiveInteractiveTu
       return;
     }
 
-    // In custom views (connection info, doctor, backups, etc.), any return key goes back
+    // In custom views (connection info, doctor, backups, etc.), allow viewing without bouncing out
     if (customView) {
-      if (key.return || key.escape || key.leftArrow || input === 'b' || input === 'q' || input === ' ') {
+      if (key.escape || key.leftArrow || input === 'b' || input === 'q') {
         goBack();
+        return;
+      }
+      // Require deliberate keypress (450ms guard) to avoid bounce-back from parent menu Enter
+      if (key.return || input === ' ') {
+        if (Date.now() - screenMountedAt > 450) {
+          goBack();
+        }
+        return;
       }
       return;
     }
@@ -1285,6 +1358,12 @@ export async function runLiveTui(ctx: Ctx): Promise<void> {
 
     const terminalReq = result;
     clearScreen();
+
+    // Trap SIGINT during external prompts or interactive commands so Ctrl+C
+    // cancels the child action rather than terminating the parent Node process.
+    const onSigint = () => {};
+    process.on('SIGINT', onSigint);
+
     try {
       await terminalReq.run();
     } catch (err: unknown) {
@@ -1294,9 +1373,28 @@ export async function runLiveTui(ctx: Ctx): Promise<void> {
       } else {
         console.error(err);
       }
+    } finally {
+      process.off('SIGINT', onSigint);
     }
 
+    // For interactive commands that output results, wait for the user to review
+    if (terminalReq.pause && process.stdin.isTTY) {
+      say.blank();
+      const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout,
+      });
+      await new Promise<void>((resolve) => {
+        rl.question(color.meta('  Press Enter to return to menu... '), () => {
+          rl.close();
+          resolve();
+        });
+      });
+    }
+
+    // Cleanly restore and resume stdin for the next TUI iteration
     if (process.stdin.isTTY) {
+      process.stdin.setRawMode?.(false);
       process.stdin.resume();
     }
 

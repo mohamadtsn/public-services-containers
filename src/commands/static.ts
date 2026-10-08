@@ -162,7 +162,7 @@ async function sync(home: string, name: string, src: string): Promise<void> {
 /*  Site summary (for list command)                                   */
 /* ------------------------------------------------------------------ */
 
-interface SiteSummary {
+export interface SiteSummary {
   name: string;
   path: string;
   containerPath: string;
@@ -175,6 +175,10 @@ interface SiteSummary {
   port: number | null;
 }
 
+export function getSiteSummaries(ctx: Ctx): SiteSummary[] {
+  return summarize(ctx);
+}
+
 function summarize(ctx: Ctx): SiteSummary[] {
   const state = readState(ctx.home);
   const saved = sources(ctx);
@@ -184,49 +188,64 @@ function summarize(ctx: Ctx): SiteSummary[] {
 
   // Static sites (files in nginx/static/).
   if (existsSync(dir)) {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
-      const path = join(dir, entry.name);
-      let files = 0;
-      let bytes = 0;
-      for (const child of readdirSync(path, { recursive: true, withFileTypes: true })) {
-        if (!child.isFile()) continue;
-        files += 1;
-        bytes += statSync(join(child.parentPath, child.name)).size;
+    try {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
+        const path = join(dir, entry.name);
+        let files = 0;
+        let bytes = 0;
+        try {
+          for (const child of readdirSync(path, { recursive: true, withFileTypes: true })) {
+            if (!child.isFile()) continue;
+            files += 1;
+            const parent = child.parentPath ?? path;
+            try {
+              bytes += statSync(join(parent, child.name)).size;
+            } catch {
+              // ignore unreadable file
+            }
+          }
+        } catch {
+          // ignore directory traversal error
+        }
+        const siteInfo = state.staticSites?.[entry.name];
+        results.push({
+          name: entry.name,
+          path,
+          containerPath: `${CONTAINER_ROOT}/${entry.name}`,
+          files,
+          bytes,
+          source: saved[entry.name] ?? null,
+          type: siteInfo?.type ?? 'static',
+          deployMode: siteInfo?.deployMode ?? 'static',
+          outputMode: siteInfo?.outputMode ?? null,
+          port: null,
+        });
       }
-      const siteInfo = state.staticSites[entry.name];
-      results.push({
-        name: entry.name,
-        path,
-        containerPath: `${CONTAINER_ROOT}/${entry.name}`,
-        files,
-        bytes,
-        source: saved[entry.name] ?? null,
-        type: siteInfo?.type ?? 'static',
-        deployMode: siteInfo?.deployMode ?? 'static',
-        outputMode: siteInfo?.outputMode ?? null,
-        port: null,
-      });
+    } catch {
+      // ignore
     }
   }
 
   // SSR sites (containers, not in nginx/static/).
-  for (const [name, info] of Object.entries(state.staticSites)) {
-    if (info.deployMode !== 'ssr') continue;
-    // Skip if already listed as a static site directory.
-    if (results.some((r) => r.name === name)) continue;
-    results.push({
-      name,
-      path: '',
-      containerPath: '',
-      files: 0,
-      bytes: 0,
-      source: info.source,
-      type: info.type,
-      deployMode: 'ssr',
-      outputMode: info.outputMode ?? null,
-      port: info.port ?? null,
-    });
+  if (state.staticSites) {
+    for (const [name, info] of Object.entries(state.staticSites)) {
+      if (info.deployMode !== 'ssr') continue;
+      // Skip if already listed as a static site directory.
+      if (results.some((r) => r.name === name)) continue;
+      results.push({
+        name,
+        path: '',
+        containerPath: '',
+        files: 0,
+        bytes: 0,
+        source: info.source,
+        type: info.type,
+        deployMode: 'ssr',
+        outputMode: info.outputMode ?? null,
+        port: info.port ?? null,
+      });
+    }
   }
 
   return results.sort((a, b) => a.name.localeCompare(b.name));
