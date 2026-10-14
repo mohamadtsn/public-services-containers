@@ -1,5 +1,11 @@
 import { intro, isCancel, select } from '@clack/prompts';
 import { backupCommand, backupsCommand } from './commands/backup.js';
+import {
+  customAddCommand,
+  customEditCommand,
+  customListCommand,
+  customRemoveCommand,
+} from './commands/custom.js';
 import { doctorCommand } from './commands/doctor.js';
 import { infoCommand } from './commands/info.js';
 import { buildCommand, downCommand, logsCommand, restartCommand, upCommand } from './commands/lifecycle.js';
@@ -244,6 +250,17 @@ export const MENU_GROUPS: Group[] = [
       { value: 'remove', label: 'Remove a site', command: 'static remove', run: (c) => staticRemove(c, undefined) },
       { value: 'mount', label: 'Mount a host directory into Nginx', command: 'static mount', run: (c) => staticMount(c, undefined) },
       { value: 'unmount', label: 'Remove the host mount', command: 'static unmount', run: (c) => staticUnmount(c) },
+    ],
+  },
+  {
+    value: 'custom',
+    label: 'Custom services',
+    hint: 'add · edit · list · remove (MongoDB, RabbitMQ, etc.)',
+    actions: [
+      { value: 'custom-list', label: 'List custom services', command: 'custom list', run: (c) => customListCommand(c) },
+      { value: 'custom-add', label: 'Add a custom service', hint: 'presets or manual', command: 'custom add', run: (c) => customAddCommand(c) },
+      { value: 'custom-edit', label: 'Edit docker-compose.custom.yml', command: 'custom edit', run: (c) => customEditCommand(c) },
+      { value: 'custom-remove', label: 'Remove a custom service', command: 'custom remove', run: (c) => customRemoveCommand(c) },
     ],
   },
   {

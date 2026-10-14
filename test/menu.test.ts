@@ -30,6 +30,10 @@ const MUST_BE_REACHABLE = [
   'static remove',
   'static mount',
   'static unmount',
+  'custom list',
+  'custom add',
+  'custom edit',
+  'custom remove',
 ];
 
 describe('interactive menu', () => {

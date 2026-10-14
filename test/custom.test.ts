@@ -12,6 +12,7 @@ import {
   loadCustomServices,
   removeCustomService,
 } from '../src/custom.js';
+import { customAddCommand, customListCommand, customRemoveCommand } from '../src/commands/custom.js';
 import { loadEnv } from '../src/env.js';
 
 describe('custom services', () => {
@@ -181,6 +182,51 @@ describe('custom services', () => {
     expect(mongo!.label).toBe('mongodb [custom]');
     expect(mongo!.container).toBe('custom-mongo');
     expect(mongo!.address).toBe(':27017');
+  });
+
+  it('customAddCommand adds preset without interactive prompt', async () => {
+    const ctx = {
+      home: dir,
+      env: loadEnv(dir),
+      json: false,
+      yes: true,
+      created: false,
+    };
+
+    await customAddCommand(ctx, 'rabbitmq');
+    const services = loadCustomServices(dir);
+    expect(services).toHaveLength(1);
+    expect(services[0]!.key).toBe('rabbitmq');
+    expect(services[0]!.ports).toContain('5672:5672');
+  });
+
+  it('customRemoveCommand removes service with yes flag', async () => {
+    const ctx = {
+      home: dir,
+      env: loadEnv(dir),
+      json: false,
+      yes: true,
+      created: false,
+    };
+
+    await customAddCommand(ctx, 'mongodb');
+    expect(loadCustomServices(dir)).toHaveLength(1);
+
+    await customRemoveCommand(ctx, 'mongodb');
+    expect(loadCustomServices(dir)).toHaveLength(0);
+  });
+
+  it('customListCommand executes cleanly in json mode', async () => {
+    const ctx = {
+      home: dir,
+      env: loadEnv(dir),
+      json: true,
+      yes: true,
+      created: false,
+    };
+
+    await customAddCommand(ctx, 'meilisearch');
+    await expect(customListCommand(ctx)).resolves.toBeUndefined();
   });
 });
 

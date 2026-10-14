@@ -1,6 +1,12 @@
 import { Command, Option } from 'commander';
 import { backupCommand, backupsCommand, pruneBackups } from './commands/backup.js';
 import { completionInstall, completionPrint, specsFrom } from './commands/completion.js';
+import {
+  customAddCommand,
+  customEditCommand,
+  customListCommand,
+  customRemoveCommand,
+} from './commands/custom.js';
 import { doctorCommand } from './commands/doctor.js';
 import { infoCommand } from './commands/info.js';
 import {
@@ -256,6 +262,33 @@ staticCmd
   .command('unmount')
   .description('remove the generated docker-compose.override.yml')
   .action(async () => staticUnmount(context(globals())));
+
+const customCmd = program
+  .command('custom')
+  .description('manage user-defined custom services in docker-compose.custom.yml')
+  .action(async () => customListCommand(context(globals())));
+
+customCmd
+  .command('list')
+  .description('list defined custom services and container status')
+  .action(async () => customListCommand(context(globals())));
+
+customCmd
+  .command('add')
+  .argument('[preset]', 'preset name (mongodb, rabbitmq, meilisearch, clickhouse)')
+  .description('add a new custom service interactively or from preset')
+  .action(async (preset: string | undefined) => customAddCommand(context(globals()), preset));
+
+customCmd
+  .command('edit')
+  .description('open docker-compose.custom.yml in $EDITOR')
+  .action(async () => customEditCommand(context(globals())));
+
+customCmd
+  .command('remove')
+  .argument('[service]', 'custom service key to remove')
+  .description('remove a custom service definition')
+  .action(async (service: string | undefined) => customRemoveCommand(context(globals()), service));
 
 /** v1 spelled these with hyphens; keep them working, but out of the help output. */
 type StaticAlias = (ctx: Ctx, a?: string, b?: string) => Promise<void> | void;
