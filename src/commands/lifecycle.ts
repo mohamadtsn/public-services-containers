@@ -1,6 +1,6 @@
 import type { Ctx } from '../context.js';
+import { allServiceKeys } from '../custom.js';
 import { compose } from '../docker.js';
-import { services } from '../env.js';
 import {
   type ProfileFlags,
   assertKnownService,
@@ -13,7 +13,7 @@ import { UserError, color, say } from '../ui.js';
 import { statusCommand } from './status.js';
 
 function serviceKeys(ctx: Ctx): string[] {
-  return services(ctx.env).map((s) => s.key);
+  return allServiceKeys(ctx.env, ctx.home);
 }
 
 /** Runs a compose subcommand, streaming docker's own progress output. */

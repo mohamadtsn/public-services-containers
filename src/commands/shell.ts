@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { isCancel, select } from '@clack/prompts';
 import type { Ctx } from '../context.js';
+import { customComposeFile, loadCustomServices } from '../custom.js';
 import { inspectMany, run } from '../docker.js';
 import { services } from '../env.js';
 import { UserError, color, say, tildify } from '../ui.js';
@@ -72,6 +73,14 @@ export function serviceConfigFiles(ctx: Ctx, serviceKey: string): ServiceConfigF
       break;
     }
     default: {
+      const custom = loadCustomServices(ctx.home).find((s) => s.key === serviceKey);
+      if (custom) {
+        files.push({
+          label: 'Custom service definition (docker-compose.custom.yml)',
+          path: customComposeFile(ctx.home),
+          hint: 'service image, ports, volumes',
+        });
+      }
       files.push({ label: 'Environment variables (.env)', path: envFile });
     }
   }
@@ -110,7 +119,8 @@ export async function editServiceConfig(ctx: Ctx, serviceKey: string, targetPath
 /** Opens an interactive shell in a container (bash, falling back to sh). */
 export async function execShellCommand(ctx: Ctx, serviceKey: string): Promise<boolean> {
   const svc = services(ctx.env).find((s) => s.key === serviceKey);
-  const container = svc ? svc.container : serviceKey;
+  const custom = loadCustomServices(ctx.home).find((s) => s.key === serviceKey);
+  const container = svc ? svc.container : (custom ? custom.container : serviceKey);
 
   const state = (await inspectMany([container])).get(container);
   if (state !== 'healthy' && state !== 'running') {

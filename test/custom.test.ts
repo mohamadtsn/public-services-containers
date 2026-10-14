@@ -5,11 +5,13 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   CUSTOM_COMPOSE_FILE,
   addCustomService,
+  allServiceKeys,
   composeFiles,
   customComposeFile,
   loadCustomServices,
   removeCustomService,
 } from '../src/custom.js';
+import { loadEnv } from '../src/env.js';
 
 describe('custom services', () => {
   let dir: string;
@@ -145,4 +147,21 @@ describe('custom services', () => {
     expect(remaining).toHaveLength(1);
     expect(remaining[0]!.key).toBe('rabbitmq');
   });
+
+  it('combines built-in services and custom services in allServiceKeys', () => {
+    addCustomService(dir, {
+      key: 'mongodb',
+      image: 'mongo:7',
+      containerName: 'custom-mongo',
+      ports: ['27017:27017'],
+      volumes: [],
+    });
+
+    const env = loadEnv(dir);
+    const keys = allServiceKeys(env, dir);
+    expect(keys).toContain('mysql');
+    expect(keys).toContain('postgres');
+    expect(keys).toContain('mongodb');
+  });
 });
+
