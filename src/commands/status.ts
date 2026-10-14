@@ -1,13 +1,13 @@
 import { printDashboard } from '../dashboard.js';
 import { type Ctx, emitJson } from '../context.js';
+import { allServices } from '../custom.js';
 import { type ContainerStatus, dockerVersion, inspectMany } from '../docker.js';
-import { services } from '../env.js';
 import { packageVersion } from '../home.js';
 import { say } from '../ui.js';
 
 export async function statusCommand(ctx: Ctx): Promise<void> {
   if (ctx.json) {
-    const list = services(ctx.env);
+    const list = allServices(ctx.env, ctx.home);
     const docker = await dockerVersion();
     const states = docker
       ? await inspectMany(list.map((s) => s.container))

@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { type Env, services } from './env.js';
+import { type Env, type ServiceInfo, services } from './env.js';
 
 export const CUSTOM_COMPOSE_FILE = 'docker-compose.custom.yml';
 export const OVERRIDE_COMPOSE_FILE = 'docker-compose.override.yml';
@@ -28,6 +28,24 @@ export function customComposeExists(home: string): boolean {
 export function allServiceKeys(env: Env, home: string): string[] {
   const builtIn = services(env).map((s) => s.key);
   const custom = loadCustomServices(home).map((s) => s.key);
+  return [...builtIn, ...custom];
+}
+
+/**
+ * Returns all service infos, combining built-in services and custom services.
+ */
+export function allServices(env: Env, home: string): ServiceInfo[] {
+  const builtIn = services(env);
+  const custom = loadCustomServices(home).map((cs) => {
+    const address = cs.ports.length > 0 ? cs.ports.map((p) => `:${p.split(':')[0]}`).join(', ') : '—';
+    return {
+      key: cs.key,
+      label: cs.label,
+      container: cs.container,
+      profile: null,
+      address,
+    };
+  });
   return [...builtIn, ...custom];
 }
 

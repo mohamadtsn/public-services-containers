@@ -1,7 +1,7 @@
 import { listBackups } from './commands/backup.js';
 import type { Ctx } from './context.js';
+import { allServices } from './custom.js';
 import { composeVersion, dockerVersion, inspectDetails } from './docker.js';
-import { services } from './env.js';
 import { packageVersion } from './home.js';
 import { readState } from './state.js';
 import { type DashboardData, renderDashboard } from './ui.js';
@@ -11,7 +11,7 @@ import { type DashboardData, renderDashboard } from './ui.js';
  * to feed the aesthetic CLI dashboard.
  */
 export async function getDashboardData(ctx: Ctx): Promise<DashboardData> {
-  const list = services(ctx.env);
+  const list = allServices(ctx.env, ctx.home);
   const docker = await dockerVersion();
   const compose = docker ? await composeVersion() : null;
   const details = docker

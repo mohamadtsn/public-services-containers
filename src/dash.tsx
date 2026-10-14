@@ -30,7 +30,8 @@ import {
 import type { Ctx } from './context.js';
 import { getDashboardData } from './dashboard.js';
 import { type ContainerStatus, compose, inspectMany } from './docker.js';
-import { type ServiceInfo, services } from './env.js';
+import type { ServiceInfo } from './env.js';
+import { allServices as getAllServices } from './custom.js';
 import { packageVersion } from './home.js';
 import { profilesForUp } from './profiles.js';
 import {
@@ -88,7 +89,7 @@ function Row({ service, status, selected, labelWidth, statusWidth }: RowProps) {
 
 function Dashboard({ ctx }: { ctx: Ctx }) {
   const { exit } = useApp();
-  const list = services(ctx.env);
+  const list = getAllServices(ctx.env, ctx.home);
 
   const [states, setStates] = useState<Map<string, ContainerStatus> | null>(null);
   const [cursor, setCursor] = useState(0);
@@ -554,7 +555,7 @@ function HomeView({ ctx }: { ctx: Ctx }) {
 
 function LiveInteractiveTui({ ctx, initialScreen, onResolve }: LiveInteractiveTuiProps) {
   const { exit } = useApp();
-  const allServices = services(ctx.env);
+  const allServices = getAllServices(ctx.env, ctx.home);
 
   const [data, setData] = useState<DashboardData | null>(null);
   const [screen, setScreen] = useState<ScreenState>(initialScreen);

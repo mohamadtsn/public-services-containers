@@ -6,6 +6,7 @@ import {
   CUSTOM_COMPOSE_FILE,
   addCustomService,
   allServiceKeys,
+  allServices,
   composeFiles,
   customComposeFile,
   loadCustomServices,
@@ -163,5 +164,24 @@ describe('custom services', () => {
     expect(keys).toContain('postgres');
     expect(keys).toContain('mongodb');
   });
+
+  it('combines built-in services and custom services in allServices', () => {
+    addCustomService(dir, {
+      key: 'mongodb',
+      image: 'mongo:7',
+      containerName: 'custom-mongo',
+      ports: ['27017:27017'],
+      volumes: [],
+    });
+
+    const env = loadEnv(dir);
+    const list = allServices(env, dir);
+    const mongo = list.find((s) => s.key === 'mongodb');
+    expect(mongo).toBeDefined();
+    expect(mongo!.label).toBe('mongodb [custom]');
+    expect(mongo!.container).toBe('custom-mongo');
+    expect(mongo!.address).toBe(':27017');
+  });
 });
+
 
