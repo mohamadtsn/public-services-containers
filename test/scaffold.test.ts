@@ -67,6 +67,19 @@ describe('home', () => {
     updateState(home, { version: '0.0.0-old' });
     expect(ensureHome(home).seeded).toBe(true);
   });
+
+  it('preserves docker-compose.custom.yml across version upgrades', () => {
+    const home = join(dir, 'home');
+    ensureHome(home);
+    const customFile = join(home, 'docker-compose.custom.yml');
+    writeFileSync(customFile, 'services:\n  mongodb:\n    image: mongo:7\n');
+
+    updateState(home, { version: '0.0.0-old' });
+    const res = ensureHome(home);
+    expect(res.seeded).toBe(true);
+    expect(existsSync(customFile)).toBe(true);
+    expect(readFileSync(customFile, 'utf8')).toContain('mongodb');
+  });
 });
 
 describe('env', () => {
