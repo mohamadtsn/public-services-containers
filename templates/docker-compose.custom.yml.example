@@ -1,0 +1,62 @@
+# docker-compose.custom.yml.example
+#
+# Custom services definition for pubservices.
+# Copy this file to $PUBSERVICES_HOME/docker-compose.custom.yml or use:
+#   pubservices custom add
+#
+# Any service defined here is automatically integrated into pubservices:
+#   pubservices up <service>
+#   pubservices down <service>
+#   pubservices restart <service>
+#   pubservices logs <service>
+#   pubservices exec <service>
+#
+# All services should join `public-service-network` so they can communicate
+# with MySQL, Redis, PostgreSQL, Nginx, etc. by container name.
+
+services:
+  # Example 1: MongoDB
+  # mongodb:
+  #   image: 'mongo:7'
+  #   container_name: mongodb-main
+  #   restart: unless-stopped
+  #   ports:
+  #     - '27017:27017'
+  #   environment:
+  #     MONGO_INITDB_ROOT_USERNAME: 'root'
+  #     MONGO_INITDB_ROOT_PASSWORD: 'password'
+  #   volumes:
+  #     - './data/mongodb:/data/db'
+  #   networks:
+  #     - public-service-network
+
+  # Example 2: RabbitMQ
+  # rabbitmq:
+  #   image: 'rabbitmq:3-management'
+  #   container_name: rabbitmq-main
+  #   restart: unless-stopped
+  #   ports:
+  #     - '5672:5672'
+  #     - '15672:15672'
+  #   volumes:
+  #     - './data/rabbitmq:/var/lib/rabbitmq'
+  #   networks:
+  #     - public-service-network
+
+  # Example 3: Meilisearch
+  # meilisearch:
+  #   image: 'getmeili/meilisearch:latest'
+  #   container_name: meilisearch-main
+  #   restart: unless-stopped
+  #   ports:
+  #     - '7700:7700'
+  #   environment:
+  #     MEILI_MASTER_KEY: 'masterKey123'
+  #   volumes:
+  #     - './data/meilisearch:/meili_data'
+  #   networks:
+  #     - public-service-network
+
+networks:
+  public-service-network:
+    external: true

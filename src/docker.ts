@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { isAbsolute, join, resolve as resolvePath } from 'node:path';
+import { composeFiles } from './custom.js';
 import { UserError } from './ui.js';
 
 export interface RunResult {
@@ -226,7 +227,8 @@ export interface ComposeOptions extends RunOptions {
 export function compose(home: string, args: string[], opts: ComposeOptions = {}): Promise<RunResult> {
   const { profiles = [], ...rest } = opts;
   const flags = profiles.flatMap((p) => ['--profile', p]);
-  return run('docker', ['compose', ...flags, ...args], { cwd: home, ...rest });
+  const files = composeFiles(home);
+  return run('docker', ['compose', ...files, ...flags, ...args], { cwd: home, ...rest });
 }
 
 /**
